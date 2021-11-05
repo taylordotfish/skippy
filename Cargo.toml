@@ -1,0 +1,19 @@
+[package]
+name = "skip-list"
+version = "0.1.0"
+edition = "2018"
+
+[features]
+default = ["std", "allocator-fallback"]
+# The dependency here can be made weak once this Cargo feature is stable:
+# https://github.com/rust-lang/cargo/issues/8832
+allocator_api = ["allocator-fallback/allocator_api"]
+std = []
+
+[dependencies]
+cell-mut = { path = "../cell-mut" }
+tagged-pointer = "0.2"
+
+[dependencies.allocator-fallback]
+path = "../allocator-fallback"
+optional = true
