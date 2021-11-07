@@ -24,12 +24,12 @@ pub type OptionalKey<L> =
 ///
 /// * `Self` must not be [`Send`] or [`Sync`].
 ///
-/// * [`Self::next`] must initially return [`None`] and must not change until
-///   [`Self::set_next`] is called.
+/// * When [`Self::next`] returns a value, future calls to [`Self::next`] must
+///   return that same value until [`Self::set_next`] is called.
 ///
 /// * After [`Self::set_next`] is called (with `n` as the value of the `next`
-///   parameter), [`Self::next`] must return an object identical to `n` (until
-///   the next call to [`Self::set_next`]).
+///   parameter), future calls to [`Self::next`] must return an object
+///   identical to `n` (until the next call to [`Self::set_next`]).
 ///
 /// * Clones produced through [`Clone::clone`] must behave identically to the
 ///   original object. In particular, if an operation is performed on an object
