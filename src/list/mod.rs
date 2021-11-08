@@ -200,23 +200,23 @@ where
             Some(item) => item,
             None => return,
         };
-
         assert!(first.next().is_none(), "item is already in a list");
+
         let size = first.size();
-        let mut down = self.root.clone();
         let mut parent = None;
-        let next = loop {
-            match down {
-                None => break None,
-                Some(Down::Leaf(node)) => break Some(node),
-                Some(Down::Internal(node)) => {
-                    node.size.with_mut(|s| *s += size.clone());
-                    node.key.set(first.key().into());
-                    down = node.down();
-                    parent = Some(node);
+        let next = self.root.clone().map(|mut down| {
+            loop {
+                match down {
+                    Down::Leaf(node) => return node,
+                    Down::Internal(node) => {
+                        node.size.with_mut(|s| *s += size.clone());
+                        node.key.set(first.key().into());
+                        down = node.down().unwrap();
+                        parent = Some(node);
+                    }
                 }
             }
-        };
+        });
 
         if let Some(parent) = parent {
             parent.set_down(Some(Down::Leaf(first.clone())));
@@ -410,9 +410,9 @@ where
                     if key == &node {
                         return Ok(node);
                     }
-                    debug_assert!(key < &node);
+                    debug_assert!(key > &node);
                     node = match node.next_sibling() {
-                        None => return Ok(node),
+                        None => return Err(Some(node)),
                         Some(n) if key < &n => return Err(Some(node)),
                         Some(n) => n,
                     };
@@ -422,7 +422,7 @@ where
                     if key == &leaf {
                         return Ok(leaf);
                     }
-                    debug_assert!(key < &leaf);
+                    debug_assert!(key > &leaf);
                     node = match node.next_sibling() {
                         None => break node.down().unwrap(),
                         Some(n) if key < &n.key().unwrap() => {
