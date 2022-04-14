@@ -1,11 +1,12 @@
-use super::{Down, InternalNodeRef, Next, NodeRef};
+use super::{AllocItem, Down, InternalNodeRef, Next, NodeRef};
 use core::ops::{AddAssign, SubAssign};
 use core::ptr::NonNull;
 
 mod key;
+use key::StoreKeysOptionPriv;
 pub use key::{StoreKeys, StoreKeysOption};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NoSize;
 
 impl AddAssign for NoSize {
@@ -16,28 +17,27 @@ impl SubAssign for NoSize {
     fn sub_assign(&mut self, _rhs: Self) {}
 }
 
-pub type Key<L> = <<L as LeafRef>::StoreKeys as StoreKeysOption<L>>::Key;
-pub type OptionalKey<L> =
-    <<L as LeafRef>::StoreKeys as StoreKeysOption<L>>::Optional;
+pub type Key<L> = <<L as LeafRef>::StoreKeys as StoreKeysOptionPriv<L>>::Key;
 
 /// # Safety
 ///
 /// * `Self` must not be [`Send`] or [`Sync`].
 ///
-/// * When [`Self::next`] returns a value, future calls to [`Self::next`] must
-///   return that same value until [`Self::set_next`] is called.
+/// * [`Self::next`] must initially return [`None`] until [`Self::set_next`] is
+///   called.
 ///
-/// * After [`Self::set_next`] is called (with `n` as the value of the `next`
-///   parameter), future calls to [`Self::next`] must return an object
-///   identical to `n` (until the next call to [`Self::set_next`]).
+/// * After [`Self::set_next`] is called (with parameter `params`), future
+///   calls to [`Self::next`] must return a value identical to `params.1` until
+///   the next call to [`Self::set_next`].
 ///
-/// * Clones produced through [`Clone::clone`] must behave identically to the
-///   original object. In particular, if an operation is performed on an object
-///   `s` of type `Self`, all clones of `s` (transitively and symmetrically)
-///   must behave as if that same operation were performed on them.
+/// * Because this type is conceptually a reference, clones produced through
+///   [`Clone::clone`] must behave identically to the original object. In
+///   particular, if an operation is performed on an object `s` of type `Self`,
+///   all clones of `s` (transitively and symmetrically) must behave as if that
+///   same operation were performed on them.
 pub unsafe trait LeafRef: Clone {
     const FANOUT: usize = 8;
-    type Size: Clone + Default + Ord + AddAssign + SubAssign;
+    type Size: Clone + Default + Eq + AddAssign + SubAssign;
     type StoreKeys: StoreKeysOption<Self>;
     type Align;
 
@@ -50,7 +50,7 @@ pub unsafe trait LeafRef: Clone {
 
 pub enum LeafNext<L: LeafRef> {
     Leaf(L),
-    Data(NonNull<u8>),
+    Data(NonNull<AllocItem<L>>),
 }
 
 pub struct SetNextParams<'a, L: LeafRef>(&'a L, Option<LeafNext<L>>);
@@ -100,15 +100,11 @@ impl<L: LeafRef> NodeRef for L {
     }
 
     fn key(&self) -> Option<Key<Self>> {
-        Some(self.as_key())
+        L::StoreKeys::as_key(self)
     }
 }
 
 pub trait LeafExt: LeafRef {
-    fn as_key(&self) -> Key<Self> {
-        <Self::StoreKeys as StoreKeysOption<Self>>::as_key(self)
-    }
-
     fn set_next_leaf(&self, next: Option<LeafNext<Self>>) {
         Self::set_next(SetNextParams(self, next));
     }

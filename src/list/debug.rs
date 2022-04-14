@@ -1,64 +1,226 @@
-use super::node::{Down, LeafRef, NodeRef};
+use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use super::SkipList;
 use crate::Allocator;
-use core::fmt::Debug;
+use alloc::collections::BTreeMap;
+use core::cell::RefCell;
+use core::fmt::{self, Debug, Display, Formatter};
 
-fn print_indent(indent: usize) {
-    for _ in 0..indent {
-        eprint!("  ");
+// Indents for use in format strings
+const I1: &str = "    ";
+const I2: &str = "        ";
+
+struct IdMap<T>(BTreeMap<T, usize>);
+
+impl<T> IdMap<T> {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
     }
 }
 
-macro_rules! debug_print {
-    ($indent:expr, $($args:tt)*) => {
-        print_indent($indent);
-        eprintln!($($args)*);
-    };
+impl<T: Ord> IdMap<T> {
+    pub fn get(&mut self, value: T) -> usize {
+        let len = self.0.len();
+        *self.0.entry(value).or_insert(len + 1)
+    }
+}
+
+pub trait LeafDebug: LeafRef {
+    type Id: Ord;
+    type Data: Debug;
+    fn id(&self) -> Self::Id;
+    fn data(&self) -> &Self::Data;
+}
+
+pub struct State<L: LeafDebug> {
+    internal_map: IdMap<InternalNodeRef<L>>,
+    leaf_map: IdMap<L::Id>,
+}
+
+impl<L: LeafDebug> State<L> {
+    pub fn new() -> Self {
+        Self {
+            internal_map: IdMap::new(),
+            leaf_map: IdMap::new(),
+        }
+    }
+
+    fn internal_id(&mut self, node: InternalNodeRef<L>) -> usize {
+        self.internal_map.get(node)
+    }
+
+    fn leaf_id(&mut self, node: &L) -> usize {
+        self.leaf_map.get(node.id())
+    }
 }
 
 impl<L, A> SkipList<L, A>
 where
-    L: LeafRef + Debug,
+    L: LeafDebug,
     L::Size: Debug,
     A: Allocator,
 {
-    pub(crate) fn debug(&self) {
-        eprintln!("list size: {:?}", self.size());
-        if let Some(root) = self.root.clone() {
-            debug(root, 0, 0);
+    pub(crate) fn debug<'a>(
+        &'a self,
+        state: &'a mut State<L>,
+    ) -> ListDebug<'a, L, A> {
+        ListDebug {
+            state: RefCell::new(state),
+            list: self,
         }
     }
 }
 
-pub fn debug<L>(node: Down<L>, depth: usize, indent: usize)
+#[must_use]
+pub struct ListDebug<'a, L, A>
 where
-    L: LeafRef + Debug,
+    L: LeafDebug,
+    A: Allocator,
+{
+    state: RefCell<&'a mut State<L>>,
+    list: &'a SkipList<L, A>,
+}
+
+impl<'a, L, A> Display for ListDebug<'a, L, A>
+where
+    L: LeafDebug,
+    A: Allocator,
+    L::Size: Debug,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut state = self.state.borrow_mut();
+        writeln!(f, "digraph {{")?;
+        fmt_down(*state, f, self.list.root.clone())?;
+        writeln!(f, "}}")
+    }
+}
+
+fn fmt_down<L>(
+    state: &mut State<L>,
+    f: &mut Formatter<'_>,
+    node: Option<Down<L>>,
+) -> fmt::Result
+where
+    L: LeafDebug,
     L::Size: Debug,
 {
     match node {
-        Down::Internal(mut node) => loop {
-            eprintln!();
-            debug_print!(indent, "depth {}: internal", depth);
-            debug_print!(indent, "length: {}", node.len.get());
-            debug_print!(indent, "size: {:?}", node.size());
-            if let Some(down) = node.down() {
-                debug(down, depth + 1, indent + 1);
-            }
-            node = if let Some(next) = node.next_sibling() {
-                next
-            } else {
-                break;
-            }
-        },
-        Down::Leaf(mut node) => loop {
-            eprintln!();
-            debug_print!(indent, "leaf: {:?}", node);
-            debug_print!(indent, "size: {:?}", node.size());
-            node = if let Some(next) = node.next_sibling() {
-                next
-            } else {
-                break;
-            }
-        },
+        Some(Down::Internal(node)) => fmt_internal(state, f, node),
+        Some(Down::Leaf(node)) => fmt_leaf(state, f, node),
+        None => Ok(()),
     }
+}
+
+fn fmt_internal<L>(
+    state: &mut State<L>,
+    f: &mut Formatter<'_>,
+    node: InternalNodeRef<L>,
+) -> fmt::Result
+where
+    L: LeafDebug,
+    L::Size: Debug,
+{
+    let mut n = node;
+    writeln!(f, "{I1}{{\n{I2}rank=same")?;
+    loop {
+        let id = state.internal_id(n);
+        writeln!(
+            f,
+            "{I2}i{id} [label=\"i{id} ({}, {:?})\" shape=circle]",
+            n.len.get(),
+            n.size(),
+        )?;
+        if let Some(next) = n.next_sibling() {
+            n = next;
+        } else {
+            break;
+        }
+    }
+    writeln!(f, "{I1}}}")?;
+
+    n = node;
+    loop {
+        let id = state.internal_id(n);
+        match n.down() {
+            Some(Down::Internal(down)) => {
+                writeln!(f, "{I1}i{id} -> i{}", state.internal_id(down))?;
+            }
+            Some(Down::Leaf(down)) => {
+                writeln!(f, "{I1}i{id} -> L{}", state.leaf_id(&down))?;
+            }
+            None => {}
+        }
+        fmt_down(state, f, n.down())?;
+        match NodeRef::next(&n) {
+            Some(Next::Sibling(next)) => {
+                writeln!(
+                    f,
+                    "{I1}i{id} -> i{} [arrowhead=onormal]",
+                    state.internal_id(next),
+                )?;
+                n = next;
+            }
+            Some(Next::Parent(next)) => {
+                writeln!(
+                    f,
+                    "{I1}i{id} -> i{} [style=dashed arrowhead=onormal]",
+                    state.internal_id(next),
+                )?;
+                break;
+            }
+            None => break,
+        }
+    }
+    Ok(())
+}
+
+pub fn fmt_leaf<L>(
+    state: &mut State<L>,
+    f: &mut Formatter<'_>,
+    node: L,
+) -> fmt::Result
+where
+    L: LeafDebug,
+    L::Size: Debug,
+{
+    let mut n = node.clone();
+    writeln!(f, "{I1}{{\n{I2}rank=same")?;
+    loop {
+        let id = state.leaf_id(&n);
+        writeln!(
+            f,
+            "{I2}L{id} [label=\"L{id}: {:?}\" shape=rectangle]",
+            n.data(),
+        )?;
+        if let Some(next) = n.next_sibling() {
+            n = next;
+        } else {
+            break;
+        }
+    }
+    writeln!(f, "{I1}}}")?;
+
+    n = node;
+    loop {
+        let id = state.leaf_id(&n);
+        match NodeRef::next(&n) {
+            Some(Next::Sibling(next)) => {
+                writeln!(
+                    f,
+                    "{I1}L{id} -> L{} [arrowhead=onormal]",
+                    state.leaf_id(&next),
+                )?;
+                n = next;
+            }
+            Some(Next::Parent(next)) => {
+                writeln!(
+                    f,
+                    "{I1}L{id} -> i{} [style=dashed arrowhead=onormal]",
+                    state.internal_id(next),
+                )?;
+                break;
+            }
+            None => break,
+        }
+    }
+    Ok(())
 }

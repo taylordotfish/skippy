@@ -4,13 +4,18 @@ use super::node::{LeafExt, LeafNext, LeafRef};
 use super::split::split;
 use super::traverse::get_parent;
 use crate::Allocator;
-use cell_mut::CellExt;
+use cell_ref::CellExt;
 
 struct Insertion<N: NodeRef> {
+    /// Number of new nodes inserted.
     pub count: usize,
-    pub child: N,
-    pub first: N, // start of insertion
+    /// First node in chunk to be inserted.
+    pub first: N,
+    /// Last node in chunk to be inserted.
+    pub last: N,
+    /// Change in total list size due to the initial insertion of leaves.
     pub diff: <N::Leaf as LeafRef>::Size,
+    /// New root.
     pub root: Option<Down<N::Leaf>>,
 }
 
@@ -32,9 +37,9 @@ where
     N: NodeRef,
     A: Allocator,
 {
-    let child = insertion.child;
+    let last = insertion.last;
     let first = insertion.first;
-    let mut parent = if let Some(parent) = get_parent(child) {
+    let mut parent = if let Some(parent) = get_parent(last) {
         parent
     } else {
         let root = insertion.root.get_or_insert_with(|| first.as_down());
@@ -44,6 +49,7 @@ where
                 new_root: first.as_down(),
             });
         }
+        // Create new root.
         let root = InternalNodeRef::alloc(alloc);
         root.set_down(Some(first.as_down()));
         root.len.set(1);
@@ -53,7 +59,7 @@ where
     let first_parent = parent;
     let new_len = parent.len.get() + insertion.count;
     let use_fast_insertion =
-        new_len < max_node_length::<N::Leaf>() && insertion.root.is_none();
+        new_len <= max_node_length::<N::Leaf>() && insertion.root.is_none();
 
     let count = if use_fast_insertion {
         let diff = insertion.diff.clone();
@@ -64,7 +70,7 @@ where
         let first: N = parent.down_as().unwrap();
         let mut iter = split(first, new_len);
         let end = parent.next();
-        iter.next().unwrap().apply(parent);
+        iter.next().unwrap().apply_to(parent);
         let count = iter
             .map(|setup| {
                 let node = setup.into_new(alloc);
@@ -78,8 +84,8 @@ where
 
     InsertionResult::Insertion(Insertion {
         count,
-        child: parent,
         first: first_parent,
+        last: parent,
         diff: insertion.diff,
         root: insertion.root,
     })
@@ -109,8 +115,8 @@ where
     pos.set_next_leaf(end);
     let insertion = Insertion {
         count,
-        child: pos,
         first,
+        last: pos,
         diff: size,
         root: None,
     };

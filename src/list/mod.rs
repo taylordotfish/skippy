@@ -1,5 +1,6 @@
 use crate::{Allocator, Global};
-use cell_mut::CellExt;
+use cell_ref::CellExt;
+use core::borrow::Borrow;
 use core::cmp::Ordering;
 use core::convert::TryFrom;
 use core::iter::{self, FusedIterator};
@@ -7,7 +8,7 @@ use core::mem;
 
 #[cfg(test)]
 #[allow(dead_code)]
-mod debug;
+pub(crate) mod debug;
 mod destroy;
 mod destroy_safety;
 mod insert;
@@ -22,7 +23,7 @@ pub use node::{NoSize, StoreKeys, StoreKeysOption};
 use destroy::{deconstruct, destroy_node_list};
 use destroy_safety::SetUnsafeOnDrop;
 use insert::insert_after;
-use node::{Down, InternalNodeRef, Key, LeafExt, Next, NodeRef, SizeExt};
+use node::{Down, InternalNodeRef, Key, Next, NodeRef, SizeExt};
 use remove::remove;
 use traverse::{get_last_sibling, get_parent_info};
 use traverse::{get_previous, get_previous_info};
@@ -46,7 +47,7 @@ fn propagate_update_diff<N: NodeRef>(
     old_size: <N::Leaf as LeafRef>::Size,
     new_size: <N::Leaf as LeafRef>::Size,
 ) {
-    let zero_diff = old_size == new_size;
+    let any_diff = old_size != new_size;
     let info = get_parent_info(node);
     let mut parent = info.parent;
     let mut position = info.position;
@@ -54,7 +55,7 @@ fn propagate_update_diff<N: NodeRef>(
     while let Some(node) = parent {
         key = key.filter(|_| position == 0);
         let mut any_update = false;
-        if !zero_diff {
+        if any_diff {
             node.size.with_mut(|s| {
                 *s += new_size.clone();
                 *s -= old_size.clone();
@@ -62,7 +63,7 @@ fn propagate_update_diff<N: NodeRef>(
             any_update = true;
         }
         if let Some(key) = &key {
-            node.key.set(Some(key.clone()).into());
+            node.key.set(Some(key.clone()));
             any_update = true;
         }
         if !any_update {
@@ -87,6 +88,52 @@ impl<L: LeafRef> SkipList<L> {
     pub fn new() -> Self {
         Self::new_in(Global)
     }
+
+    pub fn next(item: L) -> Option<L> {
+        let mut node = match NodeRef::next(&item)? {
+            Next::Sibling(node) => return Some(node),
+            Next::Parent(mut node) => loop {
+                node = match node.next()? {
+                    Next::Sibling(node) => break node,
+                    Next::Parent(node) => node,
+                }
+            },
+        };
+        loop {
+            node = match node.down().unwrap() {
+                Down::Leaf(node) => return Some(node),
+                Down::Internal(node) => node,
+            };
+        }
+    }
+
+    pub fn previous(item: L) -> Option<L> {
+        let mut node = match get_previous(item)? {
+            Next::Sibling(node) => return Some(node),
+            Next::Parent(mut node) => loop {
+                node = match get_previous(node)? {
+                    Next::Sibling(node) => break node,
+                    Next::Parent(node) => node,
+                }
+            },
+        };
+        loop {
+            node = match node.down().unwrap() {
+                Down::Leaf(node) => return Some(get_last_sibling(node)),
+                Down::Internal(node) => get_last_sibling(node),
+            };
+        }
+    }
+
+    pub fn update<F>(item: L, update: F)
+    where
+        F: FnOnce(),
+    {
+        let old_size = item.size();
+        update();
+        let new_size = item.size();
+        propagate_update_diff(item, None, old_size, new_size);
+    }
 }
 
 impl<L, A> SkipList<L, A>
@@ -105,8 +152,29 @@ where
         self.root.as_ref().map_or_else(L::Size::default, |r| r.size())
     }
 
-    pub fn get(&self, pos: L::Size) -> Option<L> {
-        match pos.cmp(&self.size()) {
+    pub fn get<S>(&self, pos: &S) -> Option<L>
+    where
+        S: Ord,
+        L::Size: Borrow<S>,
+    {
+        self.get_with_cmp(|size| pos.cmp(size.borrow()))
+    }
+
+    pub fn get_with<S, F>(&self, pos: &S, f: F) -> Option<L>
+    where
+        S: Ord,
+        F: Fn(&L::Size) -> S,
+    {
+        self.get_with_cmp(|size| pos.cmp(&f(size)))
+    }
+
+    /// The argument provided to `cmp` is logically the *right-hand* side of
+    /// the comparison.
+    fn get_with_cmp<F>(&self, cmp: F) -> Option<L>
+    where
+        F: Fn(&L::Size) -> Ordering,
+    {
+        match cmp(&self.size()) {
             Ordering::Less => {}
             Ordering::Equal => {
                 return self.last().filter(|n| n.size() == L::Size::default());
@@ -120,14 +188,14 @@ where
             node = match node {
                 Down::Leaf(mut node) => loop {
                     size += node.size();
-                    if size > pos {
+                    if cmp(&size).is_lt() {
                         return Some(node);
                     }
                     node = node.next_sibling().unwrap();
                 },
                 Down::Internal(mut node) => loop {
                     let new_size = size.clone().add(node.size());
-                    if new_size > pos {
+                    if cmp(&new_size).is_lt() {
                         break node.down().unwrap();
                     }
                     size = new_size;
@@ -181,17 +249,58 @@ where
         let result = insert_after(pos, items.into_iter(), &self.alloc);
         assert!(
             roots_match(root, &result.old_root),
-            "`pos` is not from this list"
+            "`pos` is not from this list",
         );
         mem::forget(set_unsafe_on_drop);
         self.root = Some(result.new_root);
     }
 
-    pub fn insert_at_start(&mut self, item: L) {
-        self.insert_at_start_from(iter::once(item));
+    pub fn insert_after_opt(&mut self, pos: Option<L>, item: L) {
+        self.insert_after_opt_from(pos, iter::once(item));
     }
 
-    pub fn insert_at_start_from<I>(&mut self, items: I)
+    pub fn insert_after_opt_from<I>(&mut self, pos: Option<L>, items: I)
+    where
+        I: IntoIterator<Item = L>,
+    {
+        if let Some(pos) = pos {
+            self.insert_after_from(pos, items);
+        } else {
+            self.push_front_from(items);
+        }
+    }
+
+    pub fn insert_before(&mut self, pos: L, item: L) {
+        self.insert_before_from(pos, iter::once(item));
+    }
+
+    pub fn insert_before_from<I>(&mut self, pos: L, items: I)
+    where
+        I: IntoIterator<Item = L>,
+    {
+        self.insert_after_opt_from(SkipList::previous(pos), items);
+    }
+
+    pub fn insert_before_opt(&mut self, pos: Option<L>, item: L) {
+        self.insert_before_opt_from(pos, iter::once(item));
+    }
+
+    pub fn insert_before_opt_from<I>(&mut self, pos: Option<L>, items: I)
+    where
+        I: IntoIterator<Item = L>,
+    {
+        if let Some(pos) = pos {
+            self.insert_before_from(pos, items);
+        } else {
+            self.push_back_from(items);
+        }
+    }
+
+    pub fn push_front(&mut self, item: L) {
+        self.push_front_from(iter::once(item));
+    }
+
+    pub fn push_front_from<I>(&mut self, items: I)
     where
         I: IntoIterator<Item = L>,
     {
@@ -210,7 +319,7 @@ where
                     Down::Leaf(node) => return node,
                     Down::Internal(node) => {
                         node.size.with_mut(|s| *s += size.clone());
-                        node.key.set(first.key().into());
+                        node.key.set(first.key());
                         down = node.down().unwrap();
                         parent = Some(node);
                     }
@@ -234,47 +343,41 @@ where
         }
     }
 
-    pub fn insert_before(&mut self, pos: L, item: L) {
-        self.insert_before_from(pos, iter::once(item));
+    pub fn push_back(&mut self, item: L) {
+        self.push_back_from(iter::once(item));
     }
 
-    pub fn insert_before_from<I>(&mut self, pos: L, items: I)
+    pub fn push_back_from<I>(&mut self, items: I)
     where
         I: IntoIterator<Item = L>,
     {
-        if let Some(prev) = self.previous(pos) {
-            self.insert_after_from(prev, items);
-        } else {
-            self.insert_at_start_from(items);
-        }
+        self.insert_after_opt_from(self.last(), items);
     }
 
     pub fn remove(&mut self, item: L) {
         let root = self.root.as_ref().expect("`item` is not from this list");
-        let result = remove(item);
+        let mut result = remove(item);
         assert!(
             roots_match(root, &result.old_root),
-            "`pos` is not from this list"
+            "`item` is not from this list"
         );
-        // SAFETY: Every `InternalNode` in the list was allocated by
-        // `self.alloc`.
-        unsafe { destroy_node_list(result.removed, &self.alloc) };
+        // SAFETY:
+        //
+        // * Every `InternalNode` in the list was allocated by `self.alloc`.
+        // * There are no other `InternalNodeRef`s that refer to these nodes,
+        //   since `remove` removed them from the skip list.
+        unsafe {
+            destroy_node_list(&mut result.removed, &self.alloc);
+        }
         self.root = result.new_root;
     }
 
-    pub fn update<F>(&mut self, item: L, update: F)
-    where
-        F: FnOnce(),
-    {
-        let old_size = item.size();
-        update();
-        let key = item.key();
-        let new_size = item.size();
-        propagate_update_diff(item, key, old_size, new_size);
-    }
-
     pub fn replace(&mut self, old: L, new: L) {
+        assert!(new.next().is_none(), "new item is already in a list");
         let old_size = old.size();
+        new.set_next(NodeRef::next(&old));
+        old.set_next(None);
+
         let info = get_previous_info(old);
         let (parent, previous) = if let Some(prev) = info.previous {
             (prev.parent, prev.node)
@@ -292,11 +395,13 @@ where
 
         propagate_update_diff(
             parent,
-            (info.position == 0).then(|| {
-                let key = new.as_key();
-                parent.key.set(Some(key.clone()).into());
+            if info.position == 0 {
+                let key = new.key();
+                parent.key.set(key.clone());
                 key
-            }),
+            } else {
+                None
+            },
             old_size,
             new.size(),
         );
@@ -322,113 +427,81 @@ where
         }
     }
 
-    pub fn next(&self, item: L) -> Option<L> {
-        let mut node = match NodeRef::next(&item)? {
-            Next::Sibling(node) => return Some(node),
-            Next::Parent(mut node) => loop {
-                node = match node.next()? {
-                    Next::Sibling(node) => break node,
-                    Next::Parent(node) => node,
-                }
-            },
-        };
-        loop {
-            node = match node.down().unwrap() {
-                Down::Leaf(node) => return Some(node),
-                Down::Internal(node) => node,
-            };
-        }
-    }
-
-    pub fn previous(&self, item: L) -> Option<L> {
-        let mut node = match get_previous(item)? {
-            Next::Sibling(node) => return Some(node),
-            Next::Parent(mut node) => loop {
-                node = match get_previous(node)? {
-                    Next::Sibling(node) => break node,
-                    Next::Parent(node) => node,
-                }
-            },
-        };
-        loop {
-            node = match node.down().unwrap() {
-                Down::Leaf(node) => return Some(get_last_sibling(node)),
-                Down::Internal(node) => get_last_sibling(node),
-            };
-        }
-    }
-
     pub fn iter(&self) -> Iter<'_, L, A> {
         Iter {
-            leaf: self.first(),
-            list: self,
+            iter: BasicIter(self.first()),
+            _list: self,
         }
     }
 }
 
 impl<L, A> SkipList<L, A>
 where
-    L: LeafRef<StoreKeys = StoreKeys>,
+    L: LeafRef<StoreKeys = StoreKeys<true>>,
     A: Allocator,
 {
     pub fn insert(&mut self, item: L) -> Result<(), L>
     where
-        L: PartialOrd,
+        L: Ord,
     {
-        self.insert_with(item, |item| item)
-    }
-
-    pub fn insert_with<K, F>(&mut self, key: K, f: F) -> Result<(), L>
-    where
-        K: PartialOrd<L>,
-        F: FnOnce(K) -> L,
-    {
-        let node = match self.find(&key) {
-            Ok(node) => Err(node),
-            Err(node) => Ok(node),
-        }?;
-        let item = f(key);
-        if let Some(node) = node {
-            self.insert_after(node, item);
-        } else {
-            self.insert_at_start(item);
-        }
+        self.insert_after_opt(
+            match self.find(&item) {
+                Ok(n) => Err(n), // Node already in list
+                Err(n) => Ok(n), // Node not in list
+            }?,
+            item,
+        );
         Ok(())
     }
 
     pub fn find<K>(&self, key: &K) -> Result<L, Option<L>>
     where
-        K: PartialOrd<L>,
+        K: Ord,
+        L: Borrow<K>,
+    {
+        self.find_with_cmp(|item| key.cmp(item.borrow()))
+    }
+
+    pub fn find_with<K, F>(&self, key: &K, f: F) -> Result<L, Option<L>>
+    where
+        K: Ord,
+        F: Fn(&L) -> K,
+    {
+        self.find_with_cmp(|item| key.cmp(&f(item)))
+    }
+
+    /// The argument provided to `cmp` is logically the *right-hand* side of
+    /// the comparison.
+    fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
+    where
+        F: Fn(&L) -> Ordering,
     {
         let mut node = self.root.clone().ok_or(None)?;
-        if key < &node.key().unwrap() {
+        if cmp(&node.key().unwrap()).is_lt() {
             return Err(None);
         }
         loop {
             node = match node {
                 Down::Leaf(mut node) => loop {
-                    if key == &node {
+                    if cmp(&node).is_eq() {
                         return Ok(node);
                     }
-                    debug_assert!(key > &node);
+                    debug_assert!(cmp(&node).is_gt());
                     node = match node.next_sibling() {
                         None => return Err(Some(node)),
-                        Some(n) if key < &n => return Err(Some(node)),
+                        Some(n) if cmp(&n).is_lt() => return Err(Some(node)),
                         Some(n) => n,
                     };
                 },
                 Down::Internal(mut node) => loop {
                     let leaf = node.key().unwrap();
-                    if key == &leaf {
+                    if cmp(&leaf).is_eq() {
                         return Ok(leaf);
                     }
-                    debug_assert!(key > &leaf);
+                    debug_assert!(cmp(&leaf).is_gt());
                     node = match node.next_sibling() {
-                        None => break node.down().unwrap(),
-                        Some(n) if key < &n.key().unwrap() => {
-                            break node.down().unwrap();
-                        }
-                        Some(n) => n,
+                        Some(n) if cmp(&n.key().unwrap()).is_ge() => n,
+                        _ => break node.down().unwrap(),
                     };
                 },
             }
@@ -452,10 +525,27 @@ where
             Some(root) => root,
             None => return,
         };
-        let nodes = deconstruct(root);
-        // SAFETY: Every `InternalNode` in the list was allocated by
-        // `self.alloc`.
-        unsafe { destroy_node_list(nodes, &self.alloc) };
+        let mut nodes = deconstruct(root);
+        // SAFETY:
+        //
+        // * Every `InternalNode` in the list was allocated by `self.alloc`.
+        // * This method replaces the root with `None`, so no lingering
+        //   `InternalNodeRef`s will exist.
+        unsafe {
+            destroy_node_list(&mut nodes, &self.alloc);
+        }
+    }
+}
+
+struct BasicIter<L>(Option<L>);
+
+impl<L: LeafRef> Iterator for BasicIter<L> {
+    type Item = L;
+
+    fn next(&mut self) -> Option<L> {
+        let leaf = self.0.take();
+        self.0 = leaf.clone().and_then(|n| SkipList::next(n));
+        leaf
     }
 }
 
@@ -464,8 +554,8 @@ where
     L: LeafRef,
     A: Allocator,
 {
-    leaf: Option<L>,
-    list: &'a SkipList<L, A>,
+    iter: BasicIter<L>,
+    _list: &'a SkipList<L, A>,
 }
 
 impl<'a, L, A> Iterator for Iter<'a, L, A>
@@ -476,9 +566,7 @@ where
     type Item = L;
 
     fn next(&mut self) -> Option<L> {
-        let leaf = self.leaf.take();
-        self.leaf = leaf.clone().and_then(|n| self.list.next(n));
-        leaf
+        self.iter.next()
     }
 }
 
@@ -507,8 +595,8 @@ where
     L: LeafRef,
     A: Allocator,
 {
-    leaf: Option<L>,
-    list: SkipList<L, A>,
+    iter: BasicIter<L>,
+    _list: SkipList<L, A>,
 }
 
 impl<L, A> Iterator for IntoIter<L, A>
@@ -519,9 +607,7 @@ where
     type Item = L;
 
     fn next(&mut self) -> Option<L> {
-        let leaf = self.leaf.take();
-        self.leaf = leaf.clone().and_then(|n| self.list.next(n));
-        leaf
+        self.iter.next()
     }
 }
 
@@ -542,8 +628,8 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            leaf: self.first(),
-            list: self,
+            iter: BasicIter(self.first()),
+            _list: self,
         }
     }
 }

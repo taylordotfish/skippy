@@ -1,17 +1,19 @@
-use super::leaf::{Key, OptionalKey};
-use super::{Down, LeafRef, Next, NodeRef};
+use super::leaf::Key;
+use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
 use crate::Allocator;
 use alloc::alloc::Layout;
-use cell_mut::{Cell, CellExt};
-use core::marker::PhantomData;
+use cell_ref::{Cell, CellExt};
+use core::cmp::Ordering;
+use core::marker::{PhantomData, Unpin};
 use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ops::Deref;
+use core::panic::{RefUnwindSafe, UnwindSafe};
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
 
 union DownUnion<L: LeafRef> {
-    leaf: ManuallyDrop<L>,
-    internal: Option<InternalNodeRef<L>>,
+    pub leaf: ManuallyDrop<L>,
+    pub internal: Option<InternalNodeRef<L>>,
 }
 
 impl<L: LeafRef> Default for DownUnion<L> {
@@ -25,6 +27,16 @@ impl<L: LeafRef> Default for DownUnion<L> {
 #[repr(transparent)]
 pub struct AllocItem<L: LeafRef>(MaybeUninit<InternalNode<L>>);
 
+// SAFETY: We never use the inner value, so we can implement `Send`.
+unsafe impl<L: LeafRef> Send for AllocItem<L> {}
+
+// SAFETY: We never use the inner value, so we can implement `Sync`.
+unsafe impl<L: LeafRef> Sync for AllocItem<L> {}
+
+impl<L: LeafRef> Unpin for AllocItem<L> {}
+impl<L: LeafRef> UnwindSafe for AllocItem<L> {}
+impl<L: LeafRef> RefUnwindSafe for AllocItem<L> {}
+
 #[repr(align(4))]
 pub struct InternalNode<L: LeafRef> {
     _align: [L::Align; 0],
@@ -32,7 +44,7 @@ pub struct InternalNode<L: LeafRef> {
     down: Cell<DownUnion<L>>,
     pub size: Cell<L::Size>,
     pub len: Cell<usize>,
-    pub key: Cell<OptionalKey<L>>,
+    pub key: Cell<Option<Key<L>>>,
 }
 
 impl<L: LeafRef> Default for InternalNode<L> {
@@ -51,18 +63,18 @@ impl<L: LeafRef> Default for InternalNode<L> {
 impl<L: LeafRef> InternalNode<L> {
     pub fn next(&self) -> Option<Next<InternalNodeRef<L>>> {
         let next = self.next.get();
-        next.get().map(|n| {
-            if next.next_is_parent() {
-                Next::Parent(n)
-            } else {
-                Next::Sibling(n)
-            }
+        next.get().map(|n| match next.kind() {
+            NextKind::Sibling => Next::Sibling(n),
+            NextKind::Parent => Next::Parent(n),
         })
     }
 
     pub fn set_next(&self, next: Option<Next<InternalNodeRef<L>>>) {
         self.next.with_mut(|sn| {
-            sn.set_next_is_parent(matches!(next, Some(Next::Parent(_))));
+            sn.set_kind(match next {
+                Some(Next::Parent(_)) => NextKind::Parent,
+                _ => NextKind::Sibling,
+            });
             sn.set(next.map(|n| match n {
                 Next::Sibling(n) => n,
                 Next::Parent(n) => n,
@@ -71,11 +83,11 @@ impl<L: LeafRef> InternalNode<L> {
     }
 
     fn drop_down(&self) {
-        let is_leaf = self.next.get().down_is_leaf();
-        self.next.with_mut(|n| n.set_down_is_leaf(false));
-        if is_leaf {
+        let kind = self.next.get().down_kind();
+        self.next.with_mut(|n| n.set_down_kind(NodeKind::Internal));
+        if kind == NodeKind::Leaf {
             // SAFETY: Safe due to this type's invariants (`down` and
-            // `down_is_leaf` are always in sync).
+            // `down_kind` are always in sync).
             ManuallyDrop::into_inner(unsafe { self.down.take().leaf });
         }
     }
@@ -83,13 +95,13 @@ impl<L: LeafRef> InternalNode<L> {
     pub fn down(&self) -> Option<Down<L>> {
         let next = self.next.take();
         let down = self.down.take();
-        let result = if next.down_is_leaf() {
+        let result = if next.down_kind() == NodeKind::Leaf {
             // SAFETY: Safe due to this type's invariants (`down` and
-            // `down_is_leaf` are always in sync).
+            // `down_kind` are always in sync).
             Some(Down::Leaf(L::clone(unsafe { &down.leaf })))
         } else {
             // SAFETY: Safe due to this type's invariants (`down` and
-            // `down_is_leaf` are always in sync).
+            // `down_kind` are always in sync).
             unsafe { down.internal }.map(Down::Internal)
         };
         self.down.set(down);
@@ -104,7 +116,10 @@ impl<L: LeafRef> InternalNode<L> {
     pub fn set_down(&self, down: Option<Down<L>>) {
         self.drop_down();
         self.next.with_mut(|n| {
-            n.set_down_is_leaf(matches!(down, Some(Down::Leaf(_))));
+            n.set_down_kind(match down {
+                Some(Down::Leaf(_)) => NodeKind::Leaf,
+                _ => NodeKind::Internal,
+            });
         });
         self.down.set(match down {
             Some(Down::Leaf(node)) => DownUnion {
@@ -127,6 +142,13 @@ impl<L: LeafRef> InternalNode<L> {
 #[repr(align(4))]
 struct Align4(u32);
 
+impl Align4 {
+    fn sentinel() -> NonNull<Self> {
+        static SENTINEL: Align4 = Self(0);
+        NonNull::from(&SENTINEL)
+    }
+}
+
 struct InternalNext<L: LeafRef>(
     TaggedPtr<Align4, 2>,
     PhantomData<NonNull<InternalNode<L>>>,
@@ -134,7 +156,7 @@ struct InternalNext<L: LeafRef>(
 
 impl<L: LeafRef> Default for InternalNext<L> {
     fn default() -> Self {
-        Self(TaggedPtr::new(Self::sentinel(), 0), PhantomData)
+        Self(TaggedPtr::new(Align4::sentinel(), 0), PhantomData)
     }
 }
 
@@ -147,14 +169,9 @@ impl<L: LeafRef> Clone for InternalNext<L> {
 impl<L: LeafRef> Copy for InternalNext<L> {}
 
 impl<L: LeafRef> InternalNext<L> {
-    fn sentinel() -> NonNull<Align4> {
-        static SENTINEL: Align4 = Align4(0);
-        NonNull::from(&SENTINEL)
-    }
-
-    pub fn get(&self) -> Option<InternalNodeRef<L>> {
+    pub fn get(self) -> Option<InternalNodeRef<L>> {
         let ptr = self.0.ptr();
-        if ptr == Self::sentinel() {
+        if ptr == Align4::sentinel() {
             None
         } else {
             Some(InternalNodeRef(ptr.cast()))
@@ -163,27 +180,27 @@ impl<L: LeafRef> InternalNext<L> {
 
     pub fn set(&mut self, node: Option<InternalNodeRef<L>>) {
         self.0 = TaggedPtr::new(
-            node.map_or_else(Self::sentinel, |n| n.0.cast()),
+            node.map_or_else(Align4::sentinel, |n| n.0.cast()),
             self.0.tag(),
         );
     }
 
-    pub fn down_is_leaf(&self) -> bool {
-        self.0.tag() & 0b1 != 0
+    pub fn kind(self) -> NextKind {
+        NextKind::from_usize(self.0.tag() & 0b1)
     }
 
-    pub fn next_is_parent(&self) -> bool {
-        self.0.tag() & 0b10 != 0
-    }
-
-    pub fn set_down_is_leaf(&mut self, value: bool) {
+    pub fn set_kind(&mut self, kind: NextKind) {
         let (ptr, tag) = self.0.get();
-        self.0 = TaggedPtr::new(ptr, (tag & !0b1) | (value as usize));
+        self.0 = TaggedPtr::new(ptr, (tag & !0b1) | (kind as usize));
     }
 
-    pub fn set_next_is_parent(&mut self, value: bool) {
+    pub fn down_kind(self) -> NodeKind {
+        NodeKind::from_usize((self.0.tag() & 0b10) >> 1)
+    }
+
+    pub fn set_down_kind(&mut self, kind: NodeKind) {
         let (ptr, tag) = self.0.get();
-        self.0 = TaggedPtr::new(ptr, (tag & !0b10) | ((value as usize) << 1));
+        self.0 = TaggedPtr::new(ptr, (tag & !0b10) | ((kind as usize) << 1));
     }
 }
 
@@ -197,32 +214,36 @@ impl<L: LeafRef> InternalNodeRef<L> {
             .cast::<InternalNode<L>>();
         // SAFETY: `Allocator::allocate` returns valid memory matching the
         // provied layout.
-        unsafe { ptr.as_ptr().write(InternalNode::default()) };
+        unsafe {
+            ptr.as_ptr().write(InternalNode::default());
+        }
         Self(ptr)
     }
 
     /// # Safety
     ///
     /// * This node must have been allocated by `alloc`.
-    /// * The underlying `InternalNode` must never be accessed again. The best
-    ///   way to achieve this is to ensure that there are no references to the
-    ///   node (including other `InternalNodeRef` objects).
+    /// * Any [`InternalNodeRef`]s that refer to this node must never be
+    ///   accessed again. Extra care must be taken because this type is
+    ///   [`Copy`].
     pub unsafe fn dealloc<A: Allocator>(self, alloc: &A) {
         // SAFETY: Caller guarantees this node hasn't been destructed already.
         let layout = Layout::for_value(&unsafe { self.0.as_ptr().read() });
         // SAFETY: Checked by caller.
-        unsafe { alloc.deallocate(self.0.cast(), layout) };
+        unsafe {
+            alloc.deallocate(self.0.cast(), layout);
+        }
     }
 
     /// # Safety
     ///
     /// `ptr` must have come from a previous call to [`Self::as_ptr`].
-    pub unsafe fn from_ptr(ptr: NonNull<u8>) -> Self {
+    pub unsafe fn from_ptr(ptr: NonNull<AllocItem<L>>) -> Self {
         Self(ptr.cast())
     }
 
-    pub fn as_ptr(&self) -> NonNull<u8> {
-        NonNull::<InternalNode<L>>::from(&**self).cast()
+    pub fn as_ptr(self) -> NonNull<AllocItem<L>> {
+        NonNull::<InternalNode<L>>::from(&*self).cast()
     }
 }
 
@@ -253,7 +274,7 @@ impl<L: LeafRef> NodeRef for InternalNodeRef<L> {
     }
 
     fn key(&self) -> Option<Key<L>> {
-        self.key.get().into()
+        self.key.get()
     }
 }
 
@@ -275,9 +296,21 @@ impl<L: LeafRef> Clone for InternalNodeRef<L> {
 
 impl<L: LeafRef> Copy for InternalNodeRef<L> {}
 
+impl<L: LeafRef> PartialOrd for InternalNodeRef<L> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<L: LeafRef> Ord for InternalNodeRef<L> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_ptr().cmp(&other.as_ptr())
+    }
+}
+
 impl<L: LeafRef> PartialEq for InternalNodeRef<L> {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.cmp(other).is_eq()
     }
 }
 

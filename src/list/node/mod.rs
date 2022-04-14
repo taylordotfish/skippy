@@ -1,5 +1,3 @@
-use core::convert::TryFrom;
-
 pub mod internal;
 pub mod leaf;
 
@@ -76,5 +74,29 @@ impl<'a, L: LeafRef> TryFrom<&'a Down<L>> for &'a InternalNodeRef<L> {
             Down::Leaf(_) => Err(()),
             Down::Internal(node) => Ok(node),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum NodeKind {
+    Internal = 0,
+    Leaf = 1,
+}
+
+impl NodeKind {
+    pub fn from_usize(n: usize) -> Self {
+        [Self::Internal, Self::Leaf][n]
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum NextKind {
+    Sibling = 0,
+    Parent = 1,
+}
+
+impl NextKind {
+    pub fn from_usize(n: usize) -> Self {
+        [Self::Sibling, Self::Parent][n]
     }
 }

@@ -1,47 +1,30 @@
-mod sealed {
-    pub trait Sealed {}
-}
+use core::convert::Infallible;
 
-use sealed::Sealed;
-
-pub trait StoreKeysOption<T>: Sealed {
+pub trait StoreKeysOptionPriv<T> {
     type Key: Clone;
-    type Optional: Clone
-        + Default
-        + From<Option<Self::Key>>
-        + Into<Option<Self::Key>>;
-    fn as_key(value: &T) -> Self::Key;
+    fn as_key(value: &T) -> Option<Self::Key>;
 }
 
-pub struct StoreKeys;
+pub struct StoreKeys<const B: bool>;
 
-impl Sealed for StoreKeys {}
-
-impl<T: Clone> StoreKeysOption<T> for StoreKeys {
+impl<T: Clone> StoreKeysOptionPriv<T> for StoreKeys<true> {
     type Key = T;
-    type Optional = Option<T>;
 
-    fn as_key(value: &T) -> T {
-        value.clone()
+    fn as_key(value: &T) -> Option<T> {
+        Some(value.clone())
     }
 }
 
-#[derive(Clone, Default)]
-pub struct NoKey;
+impl<T> StoreKeysOptionPriv<T> for StoreKeys<false> {
+    type Key = Infallible;
 
-impl From<Option<NoKey>> for NoKey {
-    fn from(_: Option<NoKey>) -> Self {
-        Self
+    fn as_key(_value: &T) -> Option<Infallible> {
+        None
     }
 }
 
-impl Sealed for () {}
+use StoreKeysOptionPriv as Sealed;
+pub trait StoreKeysOption<T>: Sealed<T> {}
 
-impl<T> StoreKeysOption<T> for () {
-    type Key = NoKey;
-    type Optional = NoKey;
-
-    fn as_key(_value: &T) -> NoKey {
-        NoKey
-    }
-}
+impl<T: Clone> StoreKeysOption<T> for StoreKeys<true> {}
+impl<T> StoreKeysOption<T> for StoreKeys<false> {}

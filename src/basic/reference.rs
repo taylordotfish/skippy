@@ -1,28 +1,21 @@
-use super::{LeafNext, LeafRef, SetNextParams, StoreKeys, StoreKeysOption};
+use super::{Align2, BasicLeaf};
+use crate::{LeafNext, LeafRef, SetNextParams, StoreKeysOption};
 use core::cell::Cell;
 use core::fmt;
 use core::marker::PhantomData;
-use core::ops::{AddAssign, SubAssign};
+use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
 
-mod align {
-    #[repr(align(2))]
-    pub struct Align2(u16);
-}
-
-use align::Align2;
-
 #[repr(align(2))]
-pub struct BasicLeaf<'a, T, K = StoreKeys> {
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+pub struct RefLeaf<'a, T> {
     pub data: T,
     next: Cell<Option<TaggedPtr<Align2, 1>>>,
-
-    #[allow(clippy::type_complexity)]
-    phantom: PhantomData<(Cell<&'a Self>, fn() -> K)>,
+    phantom: PhantomData<Cell<&'a Self>>,
 }
 
-impl<'a, T, K> BasicLeaf<'a, T, K> {
+impl<'a, T> RefLeaf<'a, T> {
     pub fn new(data: T) -> Self {
         Self {
             data,
@@ -32,36 +25,47 @@ impl<'a, T, K> BasicLeaf<'a, T, K> {
     }
 }
 
-impl<'a, T, K> fmt::Debug for BasicLeaf<'a, T, K>
+impl<'a, T> From<T> for RefLeaf<'a, T> {
+    fn from(data: T) -> Self {
+        Self::new(data)
+    }
+}
+
+impl<'a, T> Deref for RefLeaf<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.data
+    }
+}
+
+impl<'a, T> DerefMut for RefLeaf<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
+}
+
+impl<'a, T> fmt::Debug for RefLeaf<'a, T>
 where
-    T: AsSize + fmt::Debug,
-    K: for<'b> StoreKeysOption<&'b Self>,
+    T: BasicLeaf + fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt.debug_struct("BasicLeaf")
+        fmt.debug_struct("RefLeaf")
+            .field("addr", &(self as *const _))
             .field("data", &self.data)
             .field("next", &self.next.get())
             .finish()
     }
 }
 
-pub trait AsSize {
-    const FANOUT: usize = 8;
-    type Size: Clone + Default + Ord + AddAssign + SubAssign;
-
-    fn as_size(&self) -> Self::Size {
-        Self::Size::default()
-    }
-}
-
-unsafe impl<'a, T, K> LeafRef for &BasicLeaf<'a, T, K>
+unsafe impl<'a, T> LeafRef for &RefLeaf<'a, T>
 where
-    T: AsSize,
-    K: StoreKeysOption<Self>,
+    T: BasicLeaf,
+    T::StoreKeys: StoreKeysOption<Self>,
 {
     const FANOUT: usize = T::FANOUT;
     type Size = T::Size;
-    type StoreKeys = K;
+    type StoreKeys = T::StoreKeys;
     type Align = Align2;
 
     fn next(&self) -> Option<LeafNext<Self>> {
@@ -82,6 +86,24 @@ where
     }
 
     fn size(&self) -> Self::Size {
-        self.data.as_size()
+        self.data.size()
+    }
+}
+
+#[cfg(test)]
+impl<'a, T> crate::list::debug::LeafDebug for &RefLeaf<'a, T>
+where
+    T: fmt::Debug + BasicLeaf,
+    T::StoreKeys: StoreKeysOption<Self>,
+{
+    type Id = *const RefLeaf<'a, T>;
+    type Data = T;
+
+    fn id(&self) -> Self::Id {
+        *self as _
+    }
+
+    fn data(&self) -> &T {
+        &self.data
     }
 }

@@ -1,17 +1,21 @@
 use super::min_node_length;
 use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use super::traverse::{get_nth_sibling, get_previous, get_previous_info};
-use cell_mut::CellExt;
+use cell_ref::CellExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RemovalKind {
-    Remove, // remove the node
-    Update, // just propagate changes from a downstream removal
+    /// Remove the node.
+    Remove,
+    /// Just propagate changes from a downstream removal.
+    Update,
 }
 
 struct Removal<N: NodeRef> {
+    /// Node to be removed/changed.
     pub child: N,
     pub kind: RemovalKind,
+    /// Change in total list size due to the initial leaf removal.
     pub diff: <N::Leaf as LeafRef>::Size,
 }
 
@@ -41,6 +45,8 @@ enum RemovalResult<N: NodeRef> {
 pub struct FinishedRemoval<L: LeafRef> {
     pub old_root: Down<L>,
     pub new_root: Option<Down<L>>,
+    /// A list of removed internal nodes that can be passed to
+    /// [`destroy_node_list`](super::destroy::destroy_node_list).
     pub removed: Option<InternalNodeRef<L>>,
 }
 
@@ -90,7 +96,9 @@ fn handle_removal<N: NodeRef>(removal: Removal<N>) -> RemovalResult<N> {
     if is_right {
         let right = neighbor;
         let right_first: N = right.down_as().unwrap();
+
         if right.len.get() > min_node_length::<N::Leaf>() {
+            // Transfer child from right sibling.
             let right_second = right_first.next_sibling().unwrap();
             right.len.with_mut(|n| *n -= 1);
             parent.len.with_mut(|n| *n += 1);
@@ -99,13 +107,14 @@ fn handle_removal<N: NodeRef>(removal: Removal<N>) -> RemovalResult<N> {
 
             right.set_down(Some(right_second.as_down()));
             right_first.set_next(last.next());
-            right.key.set(right_second.key().into());
+            right.key.set(right_second.key());
             last.set_next(Some(Next::Sibling(right_first)));
             return RemovalResult::Removal(Removal::update(parent, diff));
         }
 
-        right.set_down(Some(first.as_down()));
+        // Merge with right sibling.
         last.set_next(Some(Next::Sibling(right_first)));
+        right.set_down(Some(first.as_down()));
         parent.set_down(None);
         right.size.with_mut(|s| *s += parent.size.take());
         right.len.with_mut(|n| *n += parent.len.take());
@@ -115,11 +124,11 @@ fn handle_removal<N: NodeRef>(removal: Removal<N>) -> RemovalResult<N> {
     let left = neighbor;
     let left_len = left.len.get();
     let left_first: N = left.down_as().unwrap();
-    let left_penultimate =
-        get_nth_sibling(left_first.clone(), left_len - 2).unwrap();
+    let left_penultimate = get_nth_sibling(left_first, left_len - 2).unwrap();
     let left_last = left_penultimate.next_sibling().unwrap();
 
     if left_len > min_node_length::<N::Leaf>() {
+        // Transfer child from left sibling.
         left.len.with_mut(|n| *n -= 1);
         parent.len.with_mut(|n| *n += 1);
         left.size.with_mut(|s| *s -= left_last.size());
@@ -128,15 +137,16 @@ fn handle_removal<N: NodeRef>(removal: Removal<N>) -> RemovalResult<N> {
         left_penultimate.set_next(left_last.next());
         left_last.set_next(Some(Next::Sibling(first)));
         parent.set_down(Some(left_last.as_down()));
-        parent.key.set(left_last.key().into());
+        parent.key.set(left_last.key());
         return RemovalResult::Removal(Removal::update(parent, diff));
     }
 
-    parent.set_down(Some(left_first.as_down()));
+    // Merge with left sibling.
     left_last.set_next(Some(Next::Sibling(first)));
-    left.set_down(None);
-    parent.size.with_mut(|s| *s += left.size.take());
-    parent.len.with_mut(|n| *n += left.len.take());
+    last.set_next(Some(Next::Parent(left)));
+    parent.set_down(None);
+    left.size.with_mut(|s| *s += parent.size.take());
+    left.len.with_mut(|n| *n += parent.len.take());
     RemovalResult::Removal(Removal::remove(parent, diff))
 }
 
@@ -172,6 +182,7 @@ pub fn remove<L: LeafRef>(item: L) -> FinishedRemoval<L> {
     };
 
     let new_root = if root.len.get() <= 1 {
+        // Root has only one child, so remove it and reduce tree height by 1.
         let down = root.down().unwrap();
         match &down {
             Down::Leaf(node) => node.set_next(None),
