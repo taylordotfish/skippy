@@ -4,6 +4,7 @@ use core::borrow::Borrow;
 use core::cmp::Ordering;
 use core::convert::TryFrom;
 use core::iter::{self, FusedIterator};
+use core::marker::PhantomData;
 use core::mem;
 
 #[cfg(test)]
@@ -427,10 +428,10 @@ where
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, L, A> {
+    pub fn iter(&self) -> Iter<'_, L> {
         Iter {
             iter: BasicIter(self.first()),
-            _list: self,
+            phantom: PhantomData,
         }
     }
 }
@@ -459,7 +460,7 @@ where
         K: Ord,
         L: Borrow<K>,
     {
-        self.find_with_cmp(|item| key.cmp(item.borrow()))
+        self.find_with_cmp(|item| item.borrow().cmp(key))
     }
 
     pub fn find_with<K, F>(&self, key: &K, f: F) -> Result<L, Option<L>>
@@ -467,17 +468,20 @@ where
         K: Ord,
         F: Fn(&L) -> K,
     {
-        self.find_with_cmp(|item| key.cmp(&f(item)))
+        self.find_with_cmp(|item| f(item).cmp(key))
     }
 
-    /// The argument provided to `cmp` is logically the *right-hand* side of
-    /// the comparison.
+    /// Finds an item with the given comparison function.
+    ///
+    /// `cmp` checks whether its argument is less than, equal to, or greater
+    /// than the desired item. Thus, the argument provided to `cmp` is
+    /// logically the *left-hand* side of the comparison.
     fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
     where
         F: Fn(&L) -> Ordering,
     {
         let mut node = self.root.clone().ok_or(None)?;
-        if cmp(&node.key().unwrap()).is_lt() {
+        if cmp(&node.key().unwrap()).is_gt() {
             return Err(None);
         }
         loop {
@@ -486,10 +490,10 @@ where
                     if cmp(&node).is_eq() {
                         return Ok(node);
                     }
-                    debug_assert!(cmp(&node).is_gt());
+                    debug_assert!(cmp(&node).is_lt());
                     node = match node.next_sibling() {
                         None => return Err(Some(node)),
-                        Some(n) if cmp(&n).is_lt() => return Err(Some(node)),
+                        Some(n) if cmp(&n).is_gt() => return Err(Some(node)),
                         Some(n) => n,
                     };
                 },
@@ -498,9 +502,9 @@ where
                     if cmp(&leaf).is_eq() {
                         return Ok(leaf);
                     }
-                    debug_assert!(cmp(&leaf).is_gt());
+                    debug_assert!(cmp(&leaf).is_lt());
                     node = match node.next_sibling() {
-                        Some(n) if cmp(&n.key().unwrap()).is_ge() => n,
+                        Some(n) if cmp(&n.key().unwrap()).is_le() => n,
                         _ => break node.down().unwrap(),
                     };
                 },
@@ -549,19 +553,17 @@ impl<L: LeafRef> Iterator for BasicIter<L> {
     }
 }
 
-pub struct Iter<'a, L, A>
+pub struct Iter<'a, L>
 where
     L: LeafRef,
-    A: Allocator,
 {
     iter: BasicIter<L>,
-    _list: &'a SkipList<L, A>,
+    phantom: PhantomData<&'a L>,
 }
 
-impl<'a, L, A> Iterator for Iter<'a, L, A>
+impl<'a, L> Iterator for Iter<'a, L>
 where
     L: LeafRef,
-    A: Allocator,
 {
     type Item = L;
 
@@ -570,12 +572,7 @@ where
     }
 }
 
-impl<'a, L, A> FusedIterator for Iter<'a, L, A>
-where
-    L: LeafRef,
-    A: Allocator,
-{
-}
+impl<'a, L> FusedIterator for Iter<'a, L> where L: LeafRef {}
 
 impl<'a, L, A> IntoIterator for &'a SkipList<L, A>
 where
@@ -583,7 +580,7 @@ where
     A: Allocator,
 {
     type Item = L;
-    type IntoIter = Iter<'a, L, A>;
+    type IntoIter = Iter<'a, L>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()

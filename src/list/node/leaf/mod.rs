@@ -48,6 +48,7 @@ pub unsafe trait LeafRef: Clone {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum LeafNext<L: LeafRef> {
     Leaf(L),
     Data(NonNull<AllocItem<L>>),
