@@ -1,4 +1,5 @@
 use super::{AllocItem, Down, InternalNodeRef, Next, NodeRef};
+use core::fmt::{self, Debug};
 use core::ops::{AddAssign, SubAssign};
 use core::ptr::NonNull;
 
@@ -6,8 +7,14 @@ mod key;
 use key::StoreKeysOptionPriv;
 pub use key::{StoreKeys, StoreKeysOption};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NoSize;
+
+impl Debug for NoSize {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "-")
+    }
+}
 
 impl AddAssign for NoSize {
     fn add_assign(&mut self, _rhs: Self) {}

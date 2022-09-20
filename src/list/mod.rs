@@ -7,9 +7,8 @@ use core::iter::{self, FusedIterator};
 use core::marker::PhantomData;
 use core::mem;
 
-#[cfg(test)]
-#[allow(dead_code)]
-pub(crate) mod debug;
+#[cfg(skip_list_debug)]
+pub mod debug;
 mod destroy;
 mod destroy_safety;
 mod insert;
@@ -379,7 +378,7 @@ where
         new.set_next(NodeRef::next(&old));
         old.set_next(None);
 
-        let info = get_previous_info(old);
+        let info = get_previous_info(new.clone());
         let (parent, previous) = if let Some(prev) = info.previous {
             (prev.parent, prev.node)
         } else {

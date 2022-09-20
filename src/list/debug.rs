@@ -28,11 +28,11 @@ pub trait LeafDebug: LeafRef {
     type Id: Ord;
     type Data: Debug;
     fn id(&self) -> Self::Id;
-    fn data(&self) -> &Self::Data;
+    fn data(&self) -> Self::Data;
 }
 
 pub struct State<L: LeafDebug> {
-    internal_map: IdMap<InternalNodeRef<L>>,
+    internal_map: IdMap<usize>,
     leaf_map: IdMap<L::Id>,
 }
 
@@ -45,11 +45,17 @@ impl<L: LeafDebug> State<L> {
     }
 
     fn internal_id(&mut self, node: InternalNodeRef<L>) -> usize {
-        self.internal_map.get(node)
+        self.internal_map.get(node.as_ptr().as_ptr() as _)
     }
 
     fn leaf_id(&mut self, node: &L) -> usize {
         self.leaf_map.get(node.id())
+    }
+}
+
+impl<L: LeafDebug> Default for State<L> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -59,7 +65,7 @@ where
     L::Size: Debug,
     A: Allocator,
 {
-    pub(crate) fn debug<'a>(
+    pub fn debug<'a>(
         &'a self,
         state: &'a mut State<L>,
     ) -> ListDebug<'a, L, A> {

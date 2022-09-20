@@ -94,10 +94,10 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(skip_list_debug)]
 impl<T> crate::list::debug::LeafDebug for Rc<RcLeaf<T>>
 where
-    T: fmt::Debug + BasicLeaf,
+    T: BasicLeaf + fmt::Debug + Clone,
     T::StoreKeys: StoreKeysOption<Self>,
 {
     type Id = *const RcLeaf<T>;
@@ -107,7 +107,7 @@ where
         Rc::as_ptr(self)
     }
 
-    fn data(&self) -> &T {
-        &self.data
+    fn data(&self) -> T {
+        self.data.clone()
     }
 }

@@ -90,20 +90,20 @@ where
     }
 }
 
-#[cfg(test)]
-impl<'a, T> crate::list::debug::LeafDebug for &RefLeaf<'a, T>
+#[cfg(skip_list_debug)]
+impl<'a, 'b, T> crate::list::debug::LeafDebug for &'b RefLeaf<'a, T>
 where
-    T: fmt::Debug + BasicLeaf,
+    T: BasicLeaf + fmt::Debug,
     T::StoreKeys: StoreKeysOption<Self>,
 {
     type Id = *const RefLeaf<'a, T>;
-    type Data = T;
+    type Data = &'b T;
 
     fn id(&self) -> Self::Id {
         *self as _
     }
 
-    fn data(&self) -> &T {
+    fn data(&self) -> &'b T {
         &self.data
     }
 }

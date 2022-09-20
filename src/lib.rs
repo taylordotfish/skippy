@@ -18,9 +18,9 @@ mod list;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
+#[cfg(skip_list_debug)]
 #[allow(unused_imports)]
-pub(crate) use list::debug;
+pub use list::debug;
 pub use list::{AllocItem, LeafNext, LeafRef, SetNextParams};
 pub use list::{IntoIter, Iter, SkipList};
 pub use list::{NoSize, StoreKeys, StoreKeysOption};

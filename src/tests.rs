@@ -1,9 +1,6 @@
 use super::{basic::*, *};
 use core::cell::Cell;
 use core::fmt;
-use std::fs::File;
-use std::io::{self, Write};
-use std::process::Command;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct Data(usize, Cell<usize>);
@@ -138,15 +135,20 @@ fn remove() {
     assert!(list.iter().eq(refs.iter().copied()));
 }
 
+#[cfg(skip_list_debug)]
 #[allow(dead_code)]
 fn make_graph<L>(
     list: &SkipList<L>,
     state: &mut debug::State<L>,
-) -> io::Result<()>
+) -> std::io::Result<()>
 where
     L: debug::LeafDebug,
     L::Size: fmt::Debug,
 {
+    use std::fs::File;
+    use std::io::Write;
+    use std::process::Command;
+
     let mut file = File::create("graph.dot")?;
     write!(file, "{}", list.debug(state))?;
     file.sync_all()?;
