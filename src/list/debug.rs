@@ -1,6 +1,6 @@
 use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use super::SkipList;
-use crate::Allocator;
+use crate::allocator::Allocator;
 use alloc::collections::BTreeMap;
 use core::cell::RefCell;
 use core::fmt::{self, Debug, Display, Formatter};

@@ -1,19 +1,27 @@
-use super::{basic::*, *};
+use super::basic::*;
+use super::*;
+use alloc::vec::Vec;
 use core::cell::Cell;
 use core::fmt;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct Data(usize, Cell<usize>);
+struct Data {
+    value: usize,
+    size: Cell<usize>,
+}
 
 impl fmt::Debug for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({}, {})", self.0, self.1.get())
+        write!(f, "({}, {})", self.value, self.size.get())
     }
 }
 
 impl Data {
     pub fn new(n: usize, size: usize) -> Self {
-        Self(n, Cell::new(size))
+        Self {
+            value: n,
+            size: Cell::new(size),
+        }
     }
 }
 
@@ -23,7 +31,7 @@ impl BasicLeaf for Data {
     type StoreKeys = StoreKeys<true>;
 
     fn size(&self) -> Self::Size {
-        self.1.get()
+        self.size.get()
     }
 }
 
@@ -39,21 +47,21 @@ fn basic() {
     assert!(list.iter().eq(&items));
 
     for i in 0..items.len() {
-        assert_eq!(i, list.get(&i).unwrap().0);
-        assert_eq!(i, list.find_with(&i, |r| r.0).ok().unwrap().0);
+        assert_eq!(i, list.get(&i).unwrap().value);
+        assert_eq!(i, list.find_with(&i, |r| r.value).ok().unwrap().value);
         assert_eq!(
             i,
-            list.find_with(&(i * 2 + 1), |r| r.0 * 2)
+            list.find_with(&(i * 2 + 1), |r| r.value * 2)
                 .err()
                 .unwrap()
                 .unwrap()
-                .0,
+                .value,
         );
     }
 
     assert!(list.get(&items.len()).is_none());
-    assert!(list.find_with(&0, |r| r.0 + 1).is_err());
-    assert!(list.find_with(&items.len(), |r| r.0).is_err());
+    assert!(list.find_with(&0, |r| r.value + 1).is_err());
+    assert!(list.find_with(&items.len(), |r| r.value).is_err());
 }
 
 #[test]

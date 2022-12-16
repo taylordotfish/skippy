@@ -1,9 +1,8 @@
-use super::{Align2, BasicLeaf};
+use super::BasicLeaf;
 use crate::{LeafNext, LeafRef, SetNextParams, StoreKeysOption};
 use alloc::rc::Rc;
 use core::cell::Cell;
 use core::fmt;
-use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
@@ -11,9 +10,8 @@ use tagged_pointer::TaggedPtr;
 #[repr(align(2))]
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct RcLeaf<T> {
-    pub data: T,
-    next: Cell<Option<TaggedPtr<Align2, 1>>>,
-    phantom: PhantomData<Rc<Self>>,
+    data: T,
+    next: Cell<Option<TaggedPtr<Self, 1>>>,
 }
 
 impl<T> RcLeaf<T> {
@@ -21,8 +19,11 @@ impl<T> RcLeaf<T> {
         Self {
             data,
             next: Cell::default(),
-            phantom: PhantomData,
         }
+    }
+
+    pub fn into_inner(this: Self) -> T {
+        this.data
     }
 }
 
@@ -67,14 +68,14 @@ where
     const FANOUT: usize = T::FANOUT;
     type Size = T::Size;
     type StoreKeys = T::StoreKeys;
-    type Align = Align2;
+    type Align = RcLeaf<T>;
 
     fn next(&self) -> Option<LeafNext<Self>> {
-        self.next.get().map(|p| match p.get() {
-            (ptr, 0) => {
-                LeafNext::Leaf(unsafe { Rc::from_raw(ptr.cast().as_ptr()) })
-            }
-            (ptr, _) => LeafNext::Data(ptr.cast()),
+        let (ptr, tag) = self.next.get()?.get();
+        Some(match tag {
+            // SAFETY: A tag of 0 corresponds to a leaf pointer.
+            0 => LeafNext::Leaf(unsafe { Rc::from_raw(ptr.as_ptr()) }),
+            _ => LeafNext::Data(ptr.cast()),
         })
     }
 
@@ -82,7 +83,8 @@ where
         let (this, next) = params.get();
         this.next.set(next.map(|n| match n {
             LeafNext::Leaf(leaf) => TaggedPtr::new(
-                NonNull::new(Rc::into_raw(leaf) as *mut Self).unwrap().cast(),
+                // SAFETY: `Rc::into_raw` always returns non-null pointers.
+                unsafe { NonNull::new_unchecked(Rc::into_raw(leaf) as _) },
                 0,
             ),
             LeafNext::Data(data) => TaggedPtr::new(data.cast(), 1),

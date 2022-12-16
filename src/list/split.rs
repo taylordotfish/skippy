@@ -1,6 +1,6 @@
-use super::min_node_length;
 use super::node::{InternalNodeRef, LeafRef, Next, NodeRef};
-use crate::Allocator;
+use super::{min_node_length, PersistentAlloc};
+use crate::allocator::Allocator;
 use core::iter::FusedIterator;
 
 pub struct Split<N: NodeRef> {
@@ -32,7 +32,10 @@ impl<N: NodeRef> InternalNodeSetup<N> {
         self.end.set_next(Some(Next::Parent(node)));
     }
 
-    pub fn into_new<A>(self, alloc: &A) -> InternalNodeRef<N::Leaf>
+    pub fn into_new<A>(
+        self,
+        alloc: &PersistentAlloc<A>,
+    ) -> InternalNodeRef<N::Leaf>
     where
         A: Allocator,
     {

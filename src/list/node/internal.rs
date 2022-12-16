@@ -1,6 +1,7 @@
 use super::leaf::Key;
 use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
-use crate::Allocator;
+use crate::allocator::Allocator;
+use crate::list::PersistentAlloc;
 use alloc::alloc::Layout;
 use cell_ref::{Cell, CellExt};
 use core::cmp::Ordering;
@@ -61,6 +62,14 @@ impl<L: LeafRef> Default for InternalNode<L> {
 }
 
 impl<L: LeafRef> InternalNode<L> {
+    fn sentinel() -> NonNull<Self> {
+        #[repr(align(4))]
+        struct Align4(u32);
+
+        static SENTINEL: Align4 = Align4(0);
+        NonNull::from(&SENTINEL).cast()
+    }
+
     pub fn next(&self) -> Option<Next<InternalNodeRef<L>>> {
         let next = self.next.get();
         next.get().map(|n| match next.kind() {
@@ -139,30 +148,20 @@ impl<L: LeafRef> InternalNode<L> {
     }
 }
 
-#[repr(align(4))]
-struct Align4(u32);
-
-impl Align4 {
-    fn sentinel() -> NonNull<Self> {
-        static SENTINEL: Align4 = Self(0);
-        NonNull::from(&SENTINEL)
-    }
-}
-
 struct InternalNext<L: LeafRef>(
-    TaggedPtr<Align4, 2>,
+    TaggedPtr<InternalNode<L>, 2>,
     PhantomData<NonNull<InternalNode<L>>>,
 );
 
 impl<L: LeafRef> Default for InternalNext<L> {
     fn default() -> Self {
-        Self(TaggedPtr::new(Align4::sentinel(), 0), PhantomData)
+        Self(TaggedPtr::new(InternalNode::sentinel(), 0), PhantomData)
     }
 }
 
 impl<L: LeafRef> Clone for InternalNext<L> {
     fn clone(&self) -> Self {
-        Self(self.0, self.1)
+        *self
     }
 }
 
@@ -170,44 +169,36 @@ impl<L: LeafRef> Copy for InternalNext<L> {}
 
 impl<L: LeafRef> InternalNext<L> {
     pub fn get(self) -> Option<InternalNodeRef<L>> {
-        let ptr = self.0.ptr();
-        if ptr == Align4::sentinel() {
-            None
-        } else {
-            Some(InternalNodeRef(ptr.cast()))
-        }
+        Some(self.0.ptr())
+            .filter(|p| *p != InternalNode::sentinel())
+            .map(InternalNodeRef)
     }
 
     pub fn set(&mut self, node: Option<InternalNodeRef<L>>) {
-        self.0 = TaggedPtr::new(
-            node.map_or_else(Align4::sentinel, |n| n.0.cast()),
-            self.0.tag(),
-        );
+        self.0.set_ptr(node.map_or_else(InternalNode::sentinel, |n| n.0));
     }
 
     pub fn kind(self) -> NextKind {
-        NextKind::from_usize(self.0.tag() & 0b1)
+        NextKind::VARIANTS[self.0.tag() & 0b1]
     }
 
     pub fn set_kind(&mut self, kind: NextKind) {
-        let (ptr, tag) = self.0.get();
-        self.0 = TaggedPtr::new(ptr, (tag & !0b1) | (kind as usize));
+        self.0.set_tag((self.0.tag() & !0b1) | (kind as usize));
     }
 
     pub fn down_kind(self) -> NodeKind {
-        NodeKind::from_usize((self.0.tag() & 0b10) >> 1)
+        NodeKind::VARIANTS[(self.0.tag() & 0b10) >> 1]
     }
 
     pub fn set_down_kind(&mut self, kind: NodeKind) {
-        let (ptr, tag) = self.0.get();
-        self.0 = TaggedPtr::new(ptr, (tag & !0b10) | ((kind as usize) << 1));
+        self.0.set_tag((self.0.tag() & !0b10) | ((kind as usize) << 1));
     }
 }
 
 pub struct InternalNodeRef<L: LeafRef>(NonNull<InternalNode<L>>);
 
 impl<L: LeafRef> InternalNodeRef<L> {
-    pub fn alloc<A: Allocator>(alloc: &A) -> Self {
+    pub fn alloc<A: Allocator>(alloc: &PersistentAlloc<A>) -> Self {
         let ptr = alloc
             .allocate(Layout::new::<InternalNode<L>>())
             .expect("memory allocation failed")
@@ -223,9 +214,7 @@ impl<L: LeafRef> InternalNodeRef<L> {
     /// # Safety
     ///
     /// * This node must have been allocated by `alloc`.
-    /// * Any [`InternalNodeRef`]s that refer to this node must never be
-    ///   accessed again. Extra care must be taken because this type is
-    ///   [`Copy`].
+    /// * There must be no other [`InternalNodeRef`]s that refer to this node.
     pub unsafe fn dealloc<A: Allocator>(self, alloc: &A) {
         // SAFETY: Caller guarantees this node hasn't been destructed already.
         let layout = Layout::for_value(&unsafe { self.0.as_ptr().read() });
@@ -290,7 +279,7 @@ impl<L: LeafRef> Deref for InternalNodeRef<L> {
 
 impl<L: LeafRef> Clone for InternalNodeRef<L> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 

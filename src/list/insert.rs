@@ -1,9 +1,9 @@
-use super::max_node_length;
 use super::node::{Down, InternalNodeRef, Next, NodeRef};
 use super::node::{LeafExt, LeafNext, LeafRef};
 use super::split::split;
 use super::traverse::get_parent;
-use crate::Allocator;
+use super::{max_node_length, PersistentAlloc};
+use crate::allocator::Allocator;
 use cell_ref::CellExt;
 
 struct Insertion<N: NodeRef> {
@@ -31,7 +31,7 @@ pub struct FinishedInsertion<L: LeafRef> {
 
 fn handle_insertion<N, A>(
     mut insertion: Insertion<N>,
-    alloc: &A,
+    alloc: &PersistentAlloc<A>,
 ) -> InsertionResult<N::Leaf>
 where
     N: NodeRef,
@@ -94,7 +94,7 @@ where
 pub fn insert_after<L, I, A>(
     mut pos: L,
     items: I,
-    alloc: &A,
+    alloc: &PersistentAlloc<A>,
 ) -> FinishedInsertion<L>
 where
     L: LeafRef,

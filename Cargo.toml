@@ -11,7 +11,7 @@ std = []
 
 [dependencies]
 cell-ref = "0.1"
-tagged-pointer = "0.2"
+tagged-pointer = "0.2.4"
 
 [dependencies.allocator-fallback]
 version = "0.1.1"

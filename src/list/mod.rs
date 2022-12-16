@@ -1,12 +1,12 @@
-use crate::{Allocator, Global};
+use crate::allocator::{Allocator, Global};
 use cell_ref::CellExt;
 use core::borrow::Borrow;
 use core::cmp::Ordering;
 use core::convert::TryFrom;
 use core::iter::{self, FusedIterator};
-use core::marker::PhantomData;
 use core::mem;
 
+mod alloc;
 #[cfg(skip_list_debug)]
 pub mod debug;
 mod destroy;
@@ -20,6 +20,7 @@ mod traverse;
 pub use node::{AllocItem, LeafNext, LeafRef, SetNextParams};
 pub use node::{NoSize, StoreKeys, StoreKeysOption};
 
+use self::alloc::PersistentAlloc;
 use destroy::{deconstruct, destroy_node_list};
 use destroy_safety::SetUnsafeOnDrop;
 use insert::insert_after;
@@ -47,26 +48,26 @@ fn propagate_update_diff<N: NodeRef>(
     old_size: <N::Leaf as LeafRef>::Size,
     new_size: <N::Leaf as LeafRef>::Size,
 ) {
-    let any_diff = old_size != new_size;
+    let has_size_diff = old_size != new_size;
     let info = get_parent_info(node);
     let mut parent = info.parent;
     let mut position = info.position;
 
     while let Some(node) = parent {
         key = key.filter(|_| position == 0);
-        let mut any_update = false;
-        if any_diff {
+        let mut updated = false;
+        if has_size_diff {
+            updated = true;
             node.size.with_mut(|s| {
                 *s += new_size.clone();
                 *s -= old_size.clone();
             });
-            any_update = true;
         }
         if let Some(key) = &key {
+            updated = true;
             node.key.set(Some(key.clone()));
-            any_update = true;
         }
-        if !any_update {
+        if !updated {
             break;
         }
         let info = get_parent_info(node);
@@ -80,7 +81,7 @@ where
     L: LeafRef,
     A: Allocator,
 {
-    alloc: A,
+    alloc: PersistentAlloc<A>,
     root: Option<Down<L>>,
 }
 
@@ -134,6 +135,11 @@ impl<L: LeafRef> SkipList<L> {
         let new_size = item.size();
         propagate_update_diff(item, None, old_size, new_size);
     }
+
+    /// The returned iterator will yield `item` as its first element.
+    pub fn iter_at(item: L) -> Iter<L> {
+        Iter(Some(item))
+    }
 }
 
 impl<L, A> SkipList<L, A>
@@ -141,9 +147,12 @@ where
     L: LeafRef,
     A: Allocator,
 {
-    pub fn new_in(alloc: A) -> Self {
+    pub fn new_in(alloc: A) -> Self
+    where
+        A: 'static,
+    {
         Self {
-            alloc,
+            alloc: PersistentAlloc::new(alloc),
             root: None,
         }
     }
@@ -235,7 +244,13 @@ where
             };
         }
     }
+}
 
+impl<L, A> SkipList<L, A>
+where
+    L: LeafRef,
+    A: Allocator + 'static,
+{
     pub fn insert_after(&mut self, pos: L, item: L) {
         self.insert_after_from(pos, iter::once(item));
     }
@@ -371,7 +386,13 @@ where
         }
         self.root = result.new_root;
     }
+}
 
+impl<L, A> SkipList<L, A>
+where
+    L: LeafRef,
+    A: Allocator,
+{
     pub fn replace(&mut self, old: L, new: L) {
         assert!(new.next().is_none(), "new item is already in a list");
         let old_size = old.size();
@@ -427,11 +448,8 @@ where
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, L> {
-        Iter {
-            iter: BasicIter(self.first()),
-            phantom: PhantomData,
-        }
+    pub fn iter(&self) -> Iter<L> {
+        Iter(self.first())
     }
 }
 
@@ -443,6 +461,7 @@ where
     pub fn insert(&mut self, item: L) -> Result<(), L>
     where
         L: Ord,
+        A: 'static,
     {
         self.insert_after_opt(
             match self.find(&item) {
@@ -475,7 +494,7 @@ where
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
-    fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
+    pub fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
     where
         F: Fn(&L) -> Ordering,
     {
@@ -512,9 +531,13 @@ where
     }
 }
 
-impl<L: LeafRef> Default for SkipList<L> {
+impl<L, A> Default for SkipList<L, A>
+where
+    L: LeafRef,
+    A: Allocator + Default + 'static,
+{
     fn default() -> Self {
-        Self::new()
+        Self::new_in(A::default())
     }
 }
 
@@ -524,62 +547,52 @@ where
     A: Allocator,
 {
     fn drop(&mut self) {
-        let root = match self.root.take() {
+        let mut nodes = deconstruct(match self.root.take() {
             Some(root) => root,
             None => return,
-        };
-        let mut nodes = deconstruct(root);
+        });
+
         // SAFETY:
         //
         // * Every `InternalNode` in the list was allocated by `self.alloc`.
-        // * This method replaces the root with `None`, so no lingering
-        //   `InternalNodeRef`s will exist.
+        // * There are no other `InternalNodeRef`s that refer to these nodes,
+        //   since we replaced `self.root` with `None`.
         unsafe {
             destroy_node_list(&mut nodes, &self.alloc);
+        }
+
+        // SAFETY:
+        //
+        // * We just destroyed all `InternalNode`s, so all memory allocated by
+        //   `self.alloc` has been deallocated.
+        // * We never use `self.alloc` after calling `drop` here.
+        unsafe {
+            self.alloc.drop();
         }
     }
 }
 
-struct BasicIter<L>(Option<L>);
+pub struct Iter<L>(Option<L>);
 
-impl<L: LeafRef> Iterator for BasicIter<L> {
+impl<L: LeafRef> Iterator for Iter<L> {
     type Item = L;
 
     fn next(&mut self) -> Option<L> {
         let leaf = self.0.take();
-        self.0 = leaf.clone().and_then(|n| SkipList::next(n));
+        self.0 = leaf.clone().and_then(SkipList::next);
         leaf
     }
 }
 
-pub struct Iter<'a, L>
-where
-    L: LeafRef,
-{
-    iter: BasicIter<L>,
-    phantom: PhantomData<&'a L>,
-}
+impl<L: LeafRef> FusedIterator for Iter<L> {}
 
-impl<'a, L> Iterator for Iter<'a, L>
-where
-    L: LeafRef,
-{
-    type Item = L;
-
-    fn next(&mut self) -> Option<L> {
-        self.iter.next()
-    }
-}
-
-impl<'a, L> FusedIterator for Iter<'a, L> where L: LeafRef {}
-
-impl<'a, L, A> IntoIterator for &'a SkipList<L, A>
+impl<L, A> IntoIterator for &SkipList<L, A>
 where
     L: LeafRef,
     A: Allocator,
 {
     type Item = L;
-    type IntoIter = Iter<'a, L>;
+    type IntoIter = Iter<L>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -591,7 +604,7 @@ where
     L: LeafRef,
     A: Allocator,
 {
-    iter: BasicIter<L>,
+    iter: Iter<L>,
     _list: SkipList<L, A>,
 }
 
@@ -624,7 +637,7 @@ where
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter {
-            iter: BasicIter(self.first()),
+            iter: Iter(self.first()),
             _list: self,
         }
     }

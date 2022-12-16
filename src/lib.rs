@@ -1,4 +1,4 @@
-#![cfg_attr(not(any(feature = "std", test)), no_std)]
+#![cfg_attr(not(any(feature = "std", all(test, skip_list_debug))), no_std)]
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -6,10 +6,10 @@
 compile_error!("allocator_api or allocator-fallback must be enabled");
 
 #[cfg(feature = "allocator_api")]
-use alloc::alloc::{Allocator, Global};
+use alloc::alloc as allocator;
 
 #[cfg(not(feature = "allocator_api"))]
-use allocator_fallback::{Allocator, Global};
+use allocator_fallback as allocator;
 
 extern crate alloc;
 
@@ -19,7 +19,6 @@ mod list;
 mod tests;
 
 #[cfg(skip_list_debug)]
-#[allow(unused_imports)]
 pub use list::debug;
 pub use list::{AllocItem, LeafNext, LeafRef, SetNextParams};
 pub use list::{IntoIter, Iter, SkipList};

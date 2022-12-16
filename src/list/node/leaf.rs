@@ -34,8 +34,8 @@ pub type Key<L> = <<L as LeafRef>::StoreKeys as StoreKeysOptionPriv<L>>::Key;
 ///   called.
 ///
 /// * After [`Self::set_next`] is called (with parameter `params`), future
-///   calls to [`Self::next`] must return a value identical to `params.1` until
-///   the next call to [`Self::set_next`].
+///   calls to [`Self::next`] must return a value identical to `params.get().1`
+///   until the next call to [`Self::set_next`].
 ///
 /// * Because this type is conceptually a reference, clones produced through
 ///   [`Clone::clone`] must behave identically to the original object. In

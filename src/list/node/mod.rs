@@ -84,9 +84,7 @@ enum NodeKind {
 }
 
 impl NodeKind {
-    pub fn from_usize(n: usize) -> Self {
-        [Self::Internal, Self::Leaf][n]
-    }
+    pub const VARIANTS: [Self; 2] = [Self::Internal, Self::Leaf];
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -96,7 +94,5 @@ enum NextKind {
 }
 
 impl NextKind {
-    pub fn from_usize(n: usize) -> Self {
-        [Self::Sibling, Self::Parent][n]
-    }
+    pub const VARIANTS: [Self; 2] = [Self::Sibling, Self::Parent];
 }

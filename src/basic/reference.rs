@@ -1,4 +1,4 @@
-use super::{Align2, BasicLeaf};
+use super::BasicLeaf;
 use crate::{LeafNext, LeafRef, SetNextParams, StoreKeysOption};
 use core::cell::Cell;
 use core::fmt;
@@ -11,7 +11,7 @@ use tagged_pointer::TaggedPtr;
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct RefLeaf<'a, T> {
     pub data: T,
-    next: Cell<Option<TaggedPtr<Align2, 1>>>,
+    next: Cell<Option<TaggedPtr<Self, 1>>>,
     phantom: PhantomData<Cell<&'a Self>>,
 }
 
@@ -22,6 +22,10 @@ impl<'a, T> RefLeaf<'a, T> {
             next: Cell::default(),
             phantom: PhantomData,
         }
+    }
+
+    pub fn into_inner(this: Self) -> T {
+        this.data
     }
 }
 
@@ -66,11 +70,12 @@ where
     const FANOUT: usize = T::FANOUT;
     type Size = T::Size;
     type StoreKeys = T::StoreKeys;
-    type Align = Align2;
+    type Align = RefLeaf<'a, T>;
 
     fn next(&self) -> Option<LeafNext<Self>> {
         self.next.get().map(|p| match p.get() {
-            (ptr, 0) => LeafNext::Leaf(unsafe { ptr.cast().as_ref() }),
+            // SAFETY: A tag of 0 corresponds to a leaf pointer.
+            (ptr, 0) => LeafNext::Leaf(unsafe { ptr.as_ref() }),
             (ptr, _) => LeafNext::Data(ptr.cast()),
         })
     }
@@ -78,9 +83,7 @@ where
     fn set_next(params: SetNextParams<'_, Self>) {
         let (this, next) = params.get();
         this.next.set(next.map(|n| match n {
-            LeafNext::Leaf(leaf) => {
-                TaggedPtr::new(NonNull::from(leaf).cast(), 0)
-            }
+            LeafNext::Leaf(leaf) => TaggedPtr::new(NonNull::from(leaf), 0),
             LeafNext::Data(data) => TaggedPtr::new(data.cast(), 1),
         }))
     }

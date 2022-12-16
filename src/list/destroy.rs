@@ -1,6 +1,6 @@
 use super::destroy_safety::can_safely_destroy;
 use super::node::{Down, InternalNodeRef, LeafExt, LeafRef, Next, NodeRef};
-use crate::Allocator;
+use crate::allocator::Allocator;
 
 /// Returns a node list that can be passed to [`destroy_node_list`].
 pub fn deconstruct<L: LeafRef>(root: Down<L>) -> Option<InternalNodeRef<L>> {
@@ -41,8 +41,8 @@ fn deconstruct_impl<L: LeafRef>(
 /// # Safety
 ///
 /// * Every node in the list must have been allocafed by `alloc`.
-/// * Any [`InternalNodeRef`]s that refer to nodes in the list must never be
-///   used again.
+/// * There must be no other [`InternalNodeRef`]s that refer to any nodes in
+///   the list.
 pub unsafe fn destroy_node_list<L: LeafRef, A: Allocator>(
     head: &mut Option<InternalNodeRef<L>>,
     alloc: &A,
@@ -53,7 +53,9 @@ pub unsafe fn destroy_node_list<L: LeafRef, A: Allocator>(
     while let Some(node) = head {
         let next = node.next_sibling();
         // SAFETY: Checked by caller.
-        unsafe { node.dealloc(alloc) };
+        unsafe {
+            node.dealloc(alloc);
+        }
         *head = next;
     }
 }
