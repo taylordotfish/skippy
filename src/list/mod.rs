@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) [unpublished] taylor.fish <contact@taylor.fish>
+ *
+ * This file is part of Skippy.
+ *
+ * Skippy is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Skippy is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use crate::allocator::{Allocator, Global};
 use cell_ref::CellExt;
 use core::borrow::Borrow;
@@ -7,7 +26,7 @@ use core::iter::{self, FusedIterator};
 use core::mem;
 
 mod alloc;
-#[cfg(skip_list_debug)]
+#[cfg(skippy_debug)]
 pub mod debug;
 mod destroy;
 mod destroy_safety;
@@ -51,10 +70,10 @@ fn propagate_update_diff<N: NodeRef>(
     let has_size_diff = old_size != new_size;
     let info = get_parent_info(node);
     let mut parent = info.parent;
-    let mut position = info.position;
+    let mut index = info.index;
 
     while let Some(node) = parent {
-        key = key.filter(|_| position == 0);
+        key = key.filter(|_| index == 0);
         let mut updated = false;
         if has_size_diff {
             updated = true;
@@ -72,7 +91,7 @@ fn propagate_update_diff<N: NodeRef>(
         }
         let info = get_parent_info(node);
         parent = info.parent;
-        position = info.position;
+        index = info.index;
     }
 }
 
@@ -161,34 +180,44 @@ where
         self.root.as_ref().map_or_else(L::Size::default, |r| r.size())
     }
 
-    pub fn get<S>(&self, pos: &S) -> Option<L>
+    pub fn get<S>(&self, index: &S) -> Option<L>
     where
         S: Ord,
         L::Size: Borrow<S>,
     {
-        self.get_with_cmp(|size| pos.cmp(size.borrow()))
+        self.get_with_cmp(|size| size.borrow().cmp(index))
     }
 
-    pub fn get_with<S, F>(&self, pos: &S, f: F) -> Option<L>
+    /// For this method to yield correct results, `S` and [`L::Size`] must
+    /// form a total order ([`PartialOrd::partial_cmp`] should always return
+    /// [`Some`]).
+    ///
+    /// [`L::Size`]: LeafRef::Size
+    pub fn get_with<S>(&self, index: &S) -> Option<L>
     where
-        S: Ord,
-        F: Fn(&L::Size) -> S,
+        S: PartialOrd<L::Size>,
     {
-        self.get_with_cmp(|size| pos.cmp(&f(size)))
+        self.get_with_cmp(|size| {
+            let ord = index.partial_cmp(size);
+            ord.expect("`partial_cmp` returned `None`").reverse()
+        })
     }
 
-    /// The argument provided to `cmp` is logically the *right-hand* side of
-    /// the comparison.
+    /// Gets the item at the given index using the given comparison function.
+    ///
+    /// `cmp` checks whether its argument is less than, equal to, or greater
+    /// than the desired item. Thus, the argument provided to `cmp` is
+    /// logically the *left-hand* side of the comparison.
     fn get_with_cmp<F>(&self, cmp: F) -> Option<L>
     where
         F: Fn(&L::Size) -> Ordering,
     {
         match cmp(&self.size()) {
-            Ordering::Less => {}
+            Ordering::Less => return None,
             Ordering::Equal => {
                 return self.last().filter(|n| n.size() == L::Size::default());
             }
-            Ordering::Greater => return None,
+            Ordering::Greater => {}
         }
 
         let mut node = self.root.clone()?;
@@ -197,14 +226,14 @@ where
             node = match node {
                 Down::Leaf(mut node) => loop {
                     size += node.size();
-                    if cmp(&size).is_lt() {
+                    if cmp(&size).is_gt() {
                         return Some(node);
                     }
                     node = node.next_sibling().unwrap();
                 },
                 Down::Internal(mut node) => loop {
                     let new_size = size.clone().add(node.size());
-                    if cmp(&new_size).is_lt() {
+                    if cmp(&new_size).is_gt() {
                         break node.down().unwrap();
                     }
                     size = new_size;
@@ -214,33 +243,33 @@ where
         }
     }
 
-    pub fn position(&self, item: L) -> L::Size {
+    pub fn index(&self, item: L) -> L::Size {
         fn add_siblings<N: NodeRef>(
             mut node: N,
-            pos: &mut <N::Leaf as LeafRef>::Size,
+            index: &mut <N::Leaf as LeafRef>::Size,
         ) -> Option<InternalNodeRef<N::Leaf>> {
             loop {
                 node = match node.next()? {
                     Next::Parent(parent) => return Some(parent),
                     Next::Sibling(node) => {
-                        *pos += node.size();
+                        *index += node.size();
                         node
                     }
                 }
             }
         }
 
-        let mut pos = item.size();
-        let mut node = if let Some(parent) = add_siblings(item, &mut pos) {
+        let mut index = item.size();
+        let mut node = if let Some(parent) = add_siblings(item, &mut index) {
             parent
         } else {
-            return self.size().sub(pos);
+            return self.size().sub(index);
         };
         loop {
-            node = if let Some(parent) = add_siblings(node, &mut pos) {
+            node = if let Some(parent) = add_siblings(node, &mut index) {
                 parent
             } else {
-                return self.size().sub(pos);
+                return self.size().sub(index);
             };
         }
     }
@@ -416,7 +445,7 @@ where
 
         propagate_update_diff(
             parent,
-            if info.position == 0 {
+            if info.index == 0 {
                 let key = new.key();
                 parent.key.set(key.clone());
                 key
@@ -481,20 +510,25 @@ where
         self.find_with_cmp(|item| item.borrow().cmp(key))
     }
 
-    pub fn find_with<K, F>(&self, key: &K, f: F) -> Result<L, Option<L>>
+    /// For this method to yield correct results, `K` and `L` must form a
+    /// total order ([`PartialOrd::partial_cmp`] should always return
+    /// [`Some`]).
+    pub fn find_with<K>(&self, key: &K) -> Result<L, Option<L>>
     where
-        K: Ord,
-        F: Fn(&L) -> K,
+        K: PartialOrd<L>,
     {
-        self.find_with_cmp(|item| f(item).cmp(key))
+        self.find_with_cmp(|item| {
+            let ord = key.partial_cmp(item);
+            ord.expect("`partial_cmp` returned `None`").reverse()
+        })
     }
 
-    /// Finds an item with the given comparison function.
+    /// Finds an item using the given comparison function.
     ///
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
-    pub fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
+    fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
     where
         F: Fn(&L) -> Ordering,
     {

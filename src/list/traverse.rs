@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) [unpublished] taylor.fish <contact@taylor.fish>
+ *
+ * This file is part of Skippy.
+ *
+ * Skippy is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Skippy is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use super::node::{InternalNodeRef, Next, NodeRef};
 
 pub fn get_parent<N: NodeRef>(node: N) -> Option<InternalNodeRef<N::Leaf>> {
@@ -7,7 +26,7 @@ pub fn get_parent<N: NodeRef>(node: N) -> Option<InternalNodeRef<N::Leaf>> {
 pub struct ParentInfo<N: NodeRef> {
     pub parent: Option<InternalNodeRef<N::Leaf>>,
     pub last: N,
-    pub position: usize,
+    pub index: usize,
 }
 
 pub fn get_parent_info<N: NodeRef>(node: N) -> ParentInfo<N> {
@@ -18,7 +37,7 @@ pub fn get_parent_info<N: NodeRef>(node: N) -> ParentInfo<N> {
             return ParentInfo {
                 parent: None,
                 last: node,
-                position: 0,
+                index: 0,
             };
         }
     };
@@ -38,7 +57,7 @@ pub fn get_parent_info<N: NodeRef>(node: N) -> ParentInfo<N> {
     ParentInfo {
         parent: Some(parent),
         last,
-        position: parent.len.get() - count,
+        index: parent.len.get() - count,
     }
 }
 
@@ -64,7 +83,7 @@ pub struct Previous<N: NodeRef> {
 
 pub struct PreviousInfo<N: NodeRef> {
     pub last: N,
-    pub position: usize,
+    pub index: usize,
     pub previous: Option<Previous<N>>,
 }
 
@@ -72,7 +91,7 @@ pub fn get_previous_info<N: NodeRef>(node: N) -> PreviousInfo<N> {
     let ParentInfo {
         parent,
         last,
-        position,
+        index,
     } = get_parent_info(node);
 
     let parent = if let Some(parent) = parent {
@@ -80,16 +99,16 @@ pub fn get_previous_info<N: NodeRef>(node: N) -> PreviousInfo<N> {
     } else {
         return PreviousInfo {
             last,
-            position,
+            index,
             previous: None,
         };
     };
 
-    let previous = if position == 0 {
+    let previous = if index == 0 {
         Next::Parent(parent)
     } else {
         let mut node: N = parent.down_as().unwrap();
-        for _ in 1..position {
+        for _ in 1..index {
             node = node.next_sibling().unwrap();
         }
         Next::Sibling(node)
@@ -97,7 +116,7 @@ pub fn get_previous_info<N: NodeRef>(node: N) -> PreviousInfo<N> {
 
     PreviousInfo {
         last,
-        position,
+        index,
         previous: Some(Previous {
             node: previous,
             parent,
@@ -110,7 +129,7 @@ impl<N: NodeRef> From<PreviousInfo<N>> for ParentInfo<N> {
         Self {
             parent: info.previous.map(|p| p.parent),
             last: info.last,
-            position: info.position,
+            index: info.index,
         }
     }
 }

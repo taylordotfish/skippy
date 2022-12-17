@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) [unpublished] taylor.fish <contact@taylor.fish>
+ *
+ * This file is part of Skippy.
+ *
+ * Skippy is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * Skippy is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use super::basic::*;
 use super::*;
 use alloc::vec::Vec;
@@ -96,7 +115,7 @@ fn insert() {
     let mut refs = Vec::with_capacity(items.len());
     let mut list = SkipList::new();
 
-    for (pos, range, before) in [
+    for (index, range, before) in [
         (0, 0..50, false),
         (25, 50..60, false),
         (5, 60..80, false),
@@ -109,13 +128,13 @@ fn insert() {
         (0, 226..250, false),
     ] {
         if before {
-            list.insert_before_from(refs[pos], &items[range.clone()]);
-        } else if pos > 0 {
-            list.insert_after_from(refs[pos - 1], &items[range.clone()]);
+            list.insert_before_from(refs[index], &items[range.clone()]);
+        } else if index > 0 {
+            list.insert_after_from(refs[index - 1], &items[range.clone()]);
         } else {
             list.insert_after_opt_from(None, &items[range.clone()]);
         }
-        refs.splice(pos..pos, &items[range]);
+        refs.splice(index..index, &items[range]);
     }
     assert!(list.iter().eq(refs.iter().copied()));
 }
@@ -143,7 +162,7 @@ fn remove() {
     assert!(list.iter().eq(refs.iter().copied()));
 }
 
-#[cfg(skip_list_debug)]
+#[cfg(skippy_debug)]
 #[allow(dead_code)]
 fn make_graph<L>(
     list: &SkipList<L>,
