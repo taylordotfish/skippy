@@ -24,9 +24,6 @@
 #![cfg_attr(feature = "allocator_api", feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-//! Skippy
-//! ======
-//!
 //! A highly flexible, non-amortized worst-case O(log n) intrusive skip list.
 //!
 //! The skip list can be used both as an ordered sequence (allowing it to be
