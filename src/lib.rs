@@ -36,13 +36,13 @@
 #[cfg(not(any(feature = "allocator_api", feature = "allocator-fallback")))]
 compile_error!("allocator_api or allocator-fallback must be enabled");
 
+extern crate alloc;
+
 #[cfg(feature = "allocator_api")]
 use alloc::alloc as allocator;
 
 #[cfg(not(feature = "allocator_api"))]
 use allocator_fallback as allocator;
-
-extern crate alloc;
 
 pub mod basic;
 mod list;

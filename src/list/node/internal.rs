@@ -21,7 +21,7 @@ use super::leaf::Key;
 use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
 use crate::allocator::Allocator;
 use crate::list::PersistentAlloc;
-use alloc::alloc::Layout;
+use alloc::alloc::{Layout, handle_alloc_error};
 use cell_ref::{Cell, CellExt};
 use core::cmp::Ordering;
 use core::marker::{PhantomData, Unpin};
@@ -218,9 +218,10 @@ pub struct InternalNodeRef<L: LeafRef>(NonNull<InternalNode<L>>);
 
 impl<L: LeafRef> InternalNodeRef<L> {
     pub fn alloc<A: Allocator>(alloc: &PersistentAlloc<A>) -> Self {
+        let layout = Layout::new::<InternalNode<L>>();
         let ptr = alloc
-            .allocate(Layout::new::<InternalNode<L>>())
-            .expect("memory allocation failed")
+            .allocate(layout)
+            .unwrap_or_else(|_| handle_alloc_error(layout))
             .cast::<InternalNode<L>>();
         // SAFETY: `Allocator::allocate` returns valid memory matching the
         // provied layout.
@@ -235,7 +236,7 @@ impl<L: LeafRef> InternalNodeRef<L> {
     /// * This node must have been allocated by `alloc`.
     /// * There must be no other [`InternalNodeRef`]s that refer to this node.
     pub unsafe fn dealloc<A: Allocator>(self, alloc: &A) {
-        // SAFETY: Caller guarantees this node hasn't been destructed already.
+        // SAFETY: `self.0` is always an initialized, properly aligned pointer.
         let layout = Layout::for_value(&unsafe { self.0.as_ptr().read() });
         // SAFETY: Checked by caller.
         unsafe {
