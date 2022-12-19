@@ -21,7 +21,7 @@
     not(any(feature = "std", all(test, skippy_debug))),
     no_std
 )]
-#![cfg_attr(feature = "allocator_api", feature(allocator_api))]
+#![cfg_attr(has_allocator_api, feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 //! A highly flexible, non-amortized worst-case O(log n) intrusive skip list.
