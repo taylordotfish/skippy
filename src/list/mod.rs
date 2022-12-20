@@ -182,7 +182,7 @@ where
 
     pub fn get<S>(&self, index: &S) -> Option<L>
     where
-        S: Ord,
+        S: Ord + ?Sized,
         L::Size: Borrow<S>,
     {
         self.get_with_cmp(|size| size.borrow().cmp(index))
@@ -192,14 +192,21 @@ where
     /// form a total order ([`PartialOrd::partial_cmp`] should always return
     /// [`Some`]).
     ///
+    /// # Panics
+    ///
+    /// This method may panic if `S` and [`L::Size`] do not form a total order.
+    ///
     /// [`L::Size`]: LeafRef::Size
     pub fn get_with<S>(&self, index: &S) -> Option<L>
     where
-        S: PartialOrd<L::Size>,
+        S: ?Sized,
+        L::Size: PartialOrd<S>,
     {
         self.get_with_cmp(|size| {
-            let ord = index.partial_cmp(size);
-            ord.expect("`partial_cmp` returned `None`").reverse()
+            size.partial_cmp(index).unwrap_or_else(
+                #[cold]
+                || panic!("`partial_cmp` returned `None`"),
+            )
         })
     }
 
@@ -504,7 +511,7 @@ where
 
     pub fn find<K>(&self, key: &K) -> Result<L, Option<L>>
     where
-        K: Ord,
+        K: Ord + ?Sized,
         L: Borrow<K>,
     {
         self.find_with_cmp(|item| item.borrow().cmp(key))
@@ -513,13 +520,20 @@ where
     /// For this method to yield correct results, `K` and `L` must form a
     /// total order ([`PartialOrd::partial_cmp`] should always return
     /// [`Some`]).
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `K` and `L` do not form a total order.
     pub fn find_with<K>(&self, key: &K) -> Result<L, Option<L>>
     where
-        K: PartialOrd<L>,
+        K: ?Sized,
+        L: PartialOrd<K>,
     {
         self.find_with_cmp(|item| {
-            let ord = key.partial_cmp(item);
-            ord.expect("`partial_cmp` returned `None`").reverse()
+            item.partial_cmp(key).unwrap_or_else(
+                #[cold]
+                || panic!("`partial_cmp` returned `None`"),
+            )
         })
     }
 

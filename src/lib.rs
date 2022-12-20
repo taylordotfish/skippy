@@ -17,10 +17,7 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#![cfg_attr(
-    not(any(feature = "std", all(test, skippy_debug))),
-    no_std
-)]
+#![cfg_attr(not(any(feature = "std", all(test, skippy_debug))), no_std)]
 #![cfg_attr(has_allocator_api, feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
 

@@ -21,7 +21,7 @@ use super::leaf::Key;
 use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
 use crate::allocator::Allocator;
 use crate::list::PersistentAlloc;
-use alloc::alloc::{Layout, handle_alloc_error};
+use alloc::alloc::{handle_alloc_error, Layout};
 use cell_ref::{Cell, CellExt};
 use core::cmp::Ordering;
 use core::marker::{PhantomData, Unpin};
