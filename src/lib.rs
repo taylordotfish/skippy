@@ -30,7 +30,7 @@
 //! due to the intrusive nature of the skip list, the ability to query an
 //! element’s index.
 
-#[cfg(not(any(feature = "allocator_api", feature = "allocator-fallback")))]
+#[cfg(not(any_allocator_api))]
 compile_error!("allocator_api or allocator-fallback must be enabled");
 
 extern crate alloc;
@@ -38,7 +38,7 @@ extern crate alloc;
 #[cfg(feature = "allocator_api")]
 use alloc::alloc as allocator;
 
-#[cfg(not(feature = "allocator_api"))]
+#[cfg(feature = "allocator-fallback")]
 use allocator_fallback as allocator;
 
 pub mod basic;

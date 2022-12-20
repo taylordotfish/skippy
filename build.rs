@@ -1,5 +1,5 @@
 /*
- * Copyright (C) [unpublished] taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2022 taylor.fish <contact@taylor.fish>
  *
  * This file is part of Skippy.
  *
@@ -26,6 +26,9 @@ fn has_allocator_api() -> bool {
 }
 
 fn main() {
+    if cfg!(any(feature = "allocator_api", feature = "allocator-fallback")) {
+        println!("cargo:rustc-cfg=any_allocator_api");
+    }
     if has_allocator_api() {
         println!("cargo:rustc-cfg=has_allocator_api");
     }
