@@ -29,7 +29,7 @@ use tagged_pointer::TaggedPtr;
 #[repr(align(2))]
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct RefLeaf<'a, T> {
-    pub data: T,
+    data: T,
     next: Cell<Option<TaggedPtr<Self, 1>>>,
     phantom: PhantomData<Cell<&'a Self>>,
 }

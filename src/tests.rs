@@ -21,6 +21,7 @@ use super::basic::*;
 use super::*;
 use alloc::vec::Vec;
 use core::cell::Cell;
+use core::cmp::Ordering;
 use core::fmt;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -54,6 +55,53 @@ impl BasicLeaf for Data {
     }
 }
 
+struct DataValue<F> {
+    value: usize,
+    transformation: F,
+}
+
+impl DataValue<()> {
+    pub fn new(value: usize) -> DataValue<impl Fn(usize) -> usize> {
+        DataValue {
+            value,
+            transformation: |v| v,
+        }
+    }
+}
+
+impl<F> DataValue<F> {
+    pub fn with_transformation(value: usize, tf: F) -> Self {
+        Self {
+            value,
+            transformation: tf,
+        }
+    }
+}
+
+impl<F: Fn(usize) -> usize> PartialEq<&RefLeaf<'_, Data>> for DataValue<F> {
+    fn eq(&self, other: &&RefLeaf<Data>) -> bool {
+        self.partial_cmp(other) == Some(Ordering::Equal)
+    }
+}
+
+impl<F: Fn(usize) -> usize> PartialEq<DataValue<F>> for &RefLeaf<'_, Data> {
+    fn eq(&self, other: &DataValue<F>) -> bool {
+        other == self
+    }
+}
+
+impl<F: Fn(usize) -> usize> PartialOrd<&RefLeaf<'_, Data>> for DataValue<F> {
+    fn partial_cmp(&self, other: &&RefLeaf<Data>) -> Option<Ordering> {
+        Some(self.value.cmp(&(self.transformation)(other.value)))
+    }
+}
+
+impl<F: Fn(usize) -> usize> PartialOrd<DataValue<F>> for &RefLeaf<'_, Data> {
+    fn partial_cmp(&self, other: &DataValue<F>) -> Option<Ordering> {
+        other.partial_cmp(self).map(Ordering::reverse)
+    }
+}
+
 #[test]
 fn basic() {
     let items: Vec<_> =
@@ -67,20 +115,24 @@ fn basic() {
 
     for i in 0..items.len() {
         assert_eq!(i, list.get(&i).unwrap().value);
-        assert_eq!(i, list.find_with(&i, |r| r.value).ok().unwrap().value);
+        assert_eq!(i, list.find_with(&DataValue::new(i)).ok().unwrap().value);
         assert_eq!(
             i,
-            list.find_with(&(i * 2 + 1), |r| r.value * 2)
-                .err()
-                .unwrap()
-                .unwrap()
-                .value,
+            list.find_with(
+                &DataValue::with_transformation(i * 2 + 1, |v| v * 2),
+            )
+            .err()
+            .unwrap()
+            .unwrap()
+            .value,
         );
     }
 
     assert!(list.get(&items.len()).is_none());
-    assert!(list.find_with(&0, |r| r.value + 1).is_err());
-    assert!(list.find_with(&items.len(), |r| r.value).is_err());
+    assert!(
+        list.find_with(&DataValue::with_transformation(0, |v| v + 1)).is_err(),
+    );
+    assert!(list.find_with(&DataValue::new(items.len())).is_err());
 }
 
 #[test]
@@ -129,10 +181,9 @@ fn insert() {
     ] {
         if before {
             list.insert_before_from(refs[index], &items[range.clone()]);
-        } else if index > 0 {
-            list.insert_after_from(refs[index - 1], &items[range.clone()]);
         } else {
-            list.insert_after_opt_from(None, &items[range.clone()]);
+            let pos = index.checked_sub(1).map(|i| refs[i]);
+            list.insert_after_opt_from(pos, &items[range.clone()]);
         }
         refs.splice(index..index, &items[range]);
     }
