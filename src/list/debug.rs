@@ -45,9 +45,8 @@ impl<T: Ord> IdMap<T> {
 
 pub trait LeafDebug: LeafRef {
     type Id: Ord;
-    type Data: Debug;
     fn id(&self) -> Self::Id;
-    fn data(&self) -> Self::Data;
+    fn fmt_data(&self, f: &mut Formatter<'_>) -> fmt::Result;
 }
 
 pub struct State<L: LeafDebug> {
@@ -150,7 +149,7 @@ where
         let id = state.internal_id(n);
         writeln!(
             f,
-            "{I2}i{id} [label=\"i{id} ({}, {:?})\" shape=circle]",
+            "{I2}i{id} [label=\"i{id}\\nL: {}\\nS: {:?}\" shape=rectangle]",
             n.len.get(),
             n.size(),
         )?;
@@ -211,11 +210,9 @@ where
     writeln!(f, "{I1}{{\n{I2}rank=same")?;
     loop {
         let id = state.leaf_id(&n);
-        writeln!(
-            f,
-            "{I2}L{id} [label=\"L{id}: {:?}\" shape=rectangle]",
-            n.data(),
-        )?;
+        write!(f, "{I2}L{id} [label=\"L{id}\\n")?;
+        n.fmt_data(f)?;
+        writeln!(f, "\" shape=rectangle]")?;
         if let Some(next) = n.next_sibling() {
             n = next;
         } else {

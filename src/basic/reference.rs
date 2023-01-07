@@ -113,19 +113,18 @@ where
 }
 
 #[cfg(skippy_debug)]
-impl<'a, 'b, T> crate::list::debug::LeafDebug for &'b RefLeaf<'a, T>
+impl<'a, T> crate::list::debug::LeafDebug for &RefLeaf<'a, T>
 where
     T: BasicLeaf + fmt::Debug,
     T::StoreKeys: StoreKeysOption<Self>,
 {
     type Id = *const RefLeaf<'a, T>;
-    type Data = &'b T;
 
     fn id(&self) -> Self::Id {
         *self as _
     }
 
-    fn data(&self) -> &'b T {
-        &self.data
+    fn fmt_data(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.data)
     }
 }

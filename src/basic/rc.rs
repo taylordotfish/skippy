@@ -118,17 +118,16 @@ where
 #[cfg(skippy_debug)]
 impl<T> crate::list::debug::LeafDebug for Rc<RcLeaf<T>>
 where
-    T: BasicLeaf + fmt::Debug + Clone,
+    T: BasicLeaf + fmt::Debug,
     T::StoreKeys: StoreKeysOption<Self>,
 {
     type Id = *const RcLeaf<T>;
-    type Data = T;
 
     fn id(&self) -> Self::Id {
         Rc::as_ptr(self)
     }
 
-    fn data(&self) -> T {
-        self.data.clone()
+    fn fmt_data(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.data)
     }
 }

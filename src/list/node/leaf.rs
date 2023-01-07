@@ -31,7 +31,7 @@ pub struct NoSize;
 
 impl Debug for NoSize {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "-")
+        write!(fmt, "∅")
     }
 }
 
