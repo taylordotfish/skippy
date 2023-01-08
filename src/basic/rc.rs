@@ -17,8 +17,10 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use super::options::BasicOptions;
 use super::BasicLeaf;
-use crate::{LeafNext, LeafRef, SetNextParams, StoreKeysOption};
+use crate::options::{LeafSize, StoreKeys, TypedOptions};
+use crate::{LeafNext, LeafRef, SetNextParams};
 use alloc::rc::Rc;
 use core::cell::Cell;
 use core::fmt;
@@ -66,10 +68,7 @@ impl<T> DerefMut for RcLeaf<T> {
     }
 }
 
-impl<T> fmt::Debug for RcLeaf<T>
-where
-    T: BasicLeaf + fmt::Debug,
-{
+impl<T: fmt::Debug> fmt::Debug for RcLeaf<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("RcLeaf")
             .field("addr", &(self as *const _))
@@ -82,12 +81,14 @@ where
 unsafe impl<T> LeafRef for Rc<RcLeaf<T>>
 where
     T: BasicLeaf,
-    T::StoreKeys: StoreKeysOption<Self>,
+    <T::Options as BasicOptions>::StoreKeys: StoreKeys<Self>,
 {
+    type Options = TypedOptions<
+        <T::Options as BasicOptions>::SizeType,
+        <T::Options as BasicOptions>::StoreKeys,
+        RcLeaf<T>, /* Align */
+    >;
     const FANOUT: usize = T::FANOUT;
-    type Size = T::Size;
-    type StoreKeys = T::StoreKeys;
-    type Align = RcLeaf<T>;
 
     fn next(&self) -> Option<LeafNext<Self>> {
         let (ptr, tag) = self.next.get()?.get();
@@ -110,7 +111,7 @@ where
         }))
     }
 
-    fn size(&self) -> Self::Size {
+    fn size(&self) -> LeafSize<Self> {
         self.data.size()
     }
 }
@@ -119,7 +120,7 @@ where
 impl<T> crate::list::debug::LeafDebug for Rc<RcLeaf<T>>
 where
     T: BasicLeaf + fmt::Debug,
-    T::StoreKeys: StoreKeysOption<Self>,
+    <T::Options as BasicOptions>::StoreKeys: StoreKeys<Self>,
 {
     type Id = *const RcLeaf<T>;
 
@@ -131,3 +132,23 @@ where
         write!(f, "{:?}", self.data)
     }
 }
+
+#[cfg(any(doc, doctest))]
+/// <code>[Rc]\<[RcLeaf]></code> cannot implement [`Send`] or [`Sync`], as this
+/// would make it unsound to implement [`LeafRef`].
+///
+/// ```
+/// use skippy::basic::RcLeaf;
+/// struct Test<T = std::rc::Rc<RcLeaf<u8>>>(T);
+/// ```
+///
+/// ```compile_fail
+/// use skippy::basic::RcLeaf;
+/// struct Test<T: Send = std::rc::Rc<RcLeaf<u8>>>(T);
+/// ```
+///
+/// ```compile_fail
+/// use skippy::basic::RcLeaf;
+/// struct Test<T: Sync = std::rc::Rc<RcLeaf<u8>>>(T);
+/// ```
+mod leaf_is_not_send_sync {}

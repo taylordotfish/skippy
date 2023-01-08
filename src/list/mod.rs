@@ -18,6 +18,7 @@
  */
 
 use crate::allocator::{Allocator, Global};
+use crate::options::{Bool, LeafSize, ListOptions};
 use cell_ref::CellExt;
 use core::borrow::Borrow;
 use core::cmp::Ordering;
@@ -25,7 +26,6 @@ use core::convert::TryFrom;
 use core::iter::{self, FusedIterator};
 use core::mem;
 
-mod alloc;
 #[cfg(skippy_debug)]
 pub mod debug;
 mod destroy;
@@ -36,13 +36,11 @@ mod remove;
 mod split;
 mod traverse;
 
-pub use node::{AllocItem, LeafNext, LeafRef, SetNextParams};
-pub use node::{NoSize, StoreKeys, StoreKeysOption};
-
-use self::alloc::PersistentAlloc;
+use crate::PersistentAlloc;
 use destroy::{deconstruct, destroy_node_list};
 use destroy_safety::SetUnsafeOnDrop;
 use insert::insert_after;
+pub use node::{AllocItem, LeafNext, LeafRef, SetNextParams};
 use node::{Down, InternalNodeRef, Key, Next, NodeRef, SizeExt};
 use remove::remove;
 use traverse::{get_last_sibling, get_parent_info};
@@ -64,8 +62,8 @@ fn roots_match<L: LeafRef>(a: &Down<L>, b: &Down<L>) -> bool {
 fn propagate_update_diff<N: NodeRef>(
     node: N,
     mut key: Option<Key<N::Leaf>>,
-    old_size: <N::Leaf as LeafRef>::Size,
-    new_size: <N::Leaf as LeafRef>::Size,
+    old_size: LeafSize<N::Leaf>,
+    new_size: LeafSize<N::Leaf>,
 ) {
     let has_size_diff = old_size != new_size;
     let info = get_parent_info(node);
@@ -176,31 +174,30 @@ where
         }
     }
 
-    pub fn size(&self) -> L::Size {
-        self.root.as_ref().map_or_else(L::Size::default, |r| r.size())
+    pub fn size(&self) -> LeafSize<L> {
+        self.root.as_ref().map_or_else(Default::default, |r| r.size())
     }
 
     pub fn get<S>(&self, index: &S) -> Option<L>
     where
         S: Ord + ?Sized,
-        L::Size: Borrow<S>,
+        LeafSize<L>: Borrow<S>,
     {
         self.get_with_cmp(|size| size.borrow().cmp(index))
     }
 
-    /// For this method to yield correct results, `S` and [`L::Size`] must
+    /// For this method to yield correct results, `S` and [`LeafSize<L>`] must
     /// form a total order ([`PartialOrd::partial_cmp`] should always return
     /// [`Some`]).
     ///
     /// # Panics
     ///
-    /// This method may panic if `S` and [`L::Size`] do not form a total order.
-    ///
-    /// [`L::Size`]: LeafRef::Size
+    /// This method may panic if `S` and [`LeafSize<L>`] do not form a total
+    /// order.
     pub fn get_with<S>(&self, index: &S) -> Option<L>
     where
         S: ?Sized,
-        L::Size: PartialOrd<S>,
+        LeafSize<L>: PartialOrd<S>,
     {
         self.get_with_cmp(|size| {
             size.partial_cmp(index).unwrap_or_else(
@@ -215,20 +212,20 @@ where
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
-    fn get_with_cmp<F>(&self, cmp: F) -> Option<L>
+    pub fn get_with_cmp<F>(&self, cmp: F) -> Option<L>
     where
-        F: Fn(&L::Size) -> Ordering,
+        F: Fn(&LeafSize<L>) -> Ordering,
     {
         match cmp(&self.size()) {
             Ordering::Less => return None,
             Ordering::Equal => {
-                return self.last().filter(|n| n.size() == L::Size::default());
+                return self.last().filter(|n| n.size() == Default::default());
             }
             Ordering::Greater => {}
         }
 
         let mut node = self.root.clone()?;
-        let mut size = L::Size::default();
+        let mut size = LeafSize::<L>::default();
         loop {
             node = match node {
                 Down::Leaf(mut node) => loop {
@@ -250,10 +247,10 @@ where
         }
     }
 
-    pub fn index(&self, item: L) -> L::Size {
+    pub fn index(&self, item: L) -> LeafSize<L> {
         fn add_siblings<N: NodeRef>(
             mut node: N,
-            index: &mut <N::Leaf as LeafRef>::Size,
+            index: &mut LeafSize<N::Leaf>,
         ) -> Option<InternalNodeRef<N::Leaf>> {
             loop {
                 node = match node.next()? {
@@ -491,8 +488,9 @@ where
 
 impl<L, A> SkipList<L, A>
 where
-    L: LeafRef<StoreKeys = StoreKeys<true>>,
+    L: LeafRef,
     A: Allocator,
+    L::Options: ListOptions<L, StoreKeys = Bool<true>>,
 {
     pub fn insert(&mut self, item: L) -> Result<(), L>
     where
@@ -542,7 +540,7 @@ where
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
-    fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
+    pub fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
     where
         F: Fn(&L) -> Ordering,
     {

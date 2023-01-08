@@ -20,6 +20,7 @@
 use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use super::SkipList;
 use crate::allocator::Allocator;
+use crate::options::LeafSize;
 use alloc::collections::BTreeMap;
 use core::cell::RefCell;
 use core::fmt::{self, Debug, Display, Formatter};
@@ -80,8 +81,8 @@ impl<L: LeafDebug> Default for State<L> {
 impl<L, A> SkipList<L, A>
 where
     L: LeafDebug,
-    L::Size: Debug,
     A: Allocator,
+    LeafSize<L>: Debug,
 {
     pub fn debug<'a>(
         &'a self,
@@ -108,7 +109,7 @@ impl<'a, L, A> Display for ListDebug<'a, L, A>
 where
     L: LeafDebug,
     A: Allocator,
-    L::Size: Debug,
+    LeafSize<L>: Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut state = self.state.borrow_mut();
@@ -125,7 +126,7 @@ fn fmt_down<L>(
 ) -> fmt::Result
 where
     L: LeafDebug,
-    L::Size: Debug,
+    LeafSize<L>: Debug,
 {
     match node {
         Some(Down::Internal(node)) => fmt_internal(state, f, node),
@@ -141,7 +142,7 @@ fn fmt_internal<L>(
 ) -> fmt::Result
 where
     L: LeafDebug,
-    L::Size: Debug,
+    LeafSize<L>: Debug,
 {
     let mut n = node;
     writeln!(f, "{I1}{{\n{I2}rank=same")?;
@@ -204,7 +205,7 @@ pub fn fmt_leaf<L>(
 ) -> fmt::Result
 where
     L: LeafDebug,
-    L::Size: Debug,
+    LeafSize<L>: Debug,
 {
     let mut n = node.clone();
     writeln!(f, "{I1}{{\n{I2}rank=same")?;

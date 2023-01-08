@@ -17,12 +17,14 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use super::max_node_length;
 use super::node::{Down, InternalNodeRef, Next, NodeRef};
 use super::node::{LeafExt, LeafNext, LeafRef};
 use super::split::split;
 use super::traverse::get_parent;
-use super::{max_node_length, PersistentAlloc};
 use crate::allocator::Allocator;
+use crate::options::LeafSize;
+use crate::PersistentAlloc;
 use cell_ref::CellExt;
 
 struct Insertion<N: NodeRef> {
@@ -33,7 +35,7 @@ struct Insertion<N: NodeRef> {
     /// Last node in chunk to be inserted.
     pub last: N,
     /// Change in total list size due to the initial insertion of leaves.
-    pub diff: <N::Leaf as LeafRef>::Size,
+    pub diff: LeafSize<N::Leaf>,
     /// New root.
     pub root: Option<Down<N::Leaf>>,
 }
@@ -122,7 +124,7 @@ where
 {
     let first = pos.clone();
     let end = pos.next();
-    let mut size = L::Size::default();
+    let mut size = LeafSize::<L>::default();
     let count = items
         .map(|item| {
             size += item.size();

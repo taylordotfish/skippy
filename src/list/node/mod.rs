@@ -17,18 +17,19 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use crate::options::LeafSize;
+
 pub mod internal;
 pub mod leaf;
 
 pub use internal::{AllocItem, InternalNodeRef};
-pub use leaf::{Key, NoSize, SizeExt, StoreKeys, StoreKeysOption};
-pub use leaf::{LeafExt, LeafNext, LeafRef, SetNextParams};
+pub use leaf::{Key, LeafExt, LeafNext, LeafRef, SetNextParams, SizeExt};
 
 pub trait NodeRef: Clone {
     type Leaf: LeafRef;
     fn next(&self) -> Option<Next<Self>>;
     fn set_next(&self, next: Option<Next<Self>>);
-    fn size(&self) -> <Self::Leaf as LeafRef>::Size;
+    fn size(&self) -> LeafSize<Self::Leaf>;
     fn as_down(&self) -> Down<Self::Leaf>;
     fn from_down(down: Down<Self::Leaf>) -> Option<Self>;
     fn key(&self) -> Option<Key<Self::Leaf>>;
@@ -66,7 +67,7 @@ pub enum Down<L: LeafRef> {
 }
 
 impl<L: LeafRef> Down<L> {
-    pub fn size(&self) -> L::Size {
+    pub fn size(&self) -> LeafSize<L> {
         match self {
             Self::Leaf(node) => node.size(),
             Self::Internal(node) => node.size(),

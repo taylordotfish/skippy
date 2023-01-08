@@ -17,8 +17,10 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+use super::options::BasicOptions;
 use super::BasicLeaf;
-use crate::{LeafNext, LeafRef, SetNextParams, StoreKeysOption};
+use crate::options::{LeafSize, StoreKeys, TypedOptions};
+use crate::{LeafNext, LeafRef, SetNextParams};
 use core::cell::Cell;
 use core::fmt;
 use core::marker::PhantomData;
@@ -68,10 +70,7 @@ impl<'a, T> DerefMut for RefLeaf<'a, T> {
     }
 }
 
-impl<'a, T> fmt::Debug for RefLeaf<'a, T>
-where
-    T: BasicLeaf + fmt::Debug,
-{
+impl<'a, T: fmt::Debug> fmt::Debug for RefLeaf<'a, T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("RefLeaf")
             .field("addr", &(self as *const _))
@@ -84,12 +83,14 @@ where
 unsafe impl<'a, T> LeafRef for &RefLeaf<'a, T>
 where
     T: BasicLeaf,
-    T::StoreKeys: StoreKeysOption<Self>,
+    <T::Options as BasicOptions>::StoreKeys: StoreKeys<Self>,
 {
+    type Options = TypedOptions<
+        <T::Options as BasicOptions>::SizeType,
+        <T::Options as BasicOptions>::StoreKeys,
+        RefLeaf<'a, T>, /* Align */
+    >;
     const FANOUT: usize = T::FANOUT;
-    type Size = T::Size;
-    type StoreKeys = T::StoreKeys;
-    type Align = RefLeaf<'a, T>;
 
     fn next(&self) -> Option<LeafNext<Self>> {
         self.next.get().map(|p| match p.get() {
@@ -107,7 +108,7 @@ where
         }))
     }
 
-    fn size(&self) -> Self::Size {
+    fn size(&self) -> LeafSize<Self> {
         self.data.size()
     }
 }
@@ -116,7 +117,7 @@ where
 impl<'a, T> crate::list::debug::LeafDebug for &RefLeaf<'a, T>
 where
     T: BasicLeaf + fmt::Debug,
-    T::StoreKeys: StoreKeysOption<Self>,
+    <T::Options as BasicOptions>::StoreKeys: StoreKeys<Self>,
 {
     type Id = *const RefLeaf<'a, T>;
 
@@ -128,3 +129,23 @@ where
         write!(f, "{:?}", self.data)
     }
 }
+
+#[cfg(any(doc, doctest))]
+/// <code>[&](reference)[RefLeaf]</code> cannot implement [`Send`] or [`Sync`],
+/// as this would make it unsound to implement [`LeafRef`].
+///
+/// ```
+/// use skippy::basic::RefLeaf;
+/// struct Test<T = &'static RefLeaf<'static, u8>>(T);
+/// ```
+///
+/// ```compile_fail
+/// use skippy::basic::RefLeaf;
+/// struct Test<T: Send = &'static RefLeaf<'static, u8>>(T);
+/// ```
+///
+/// ```compile_fail
+/// use skippy::basic::RefLeaf;
+/// struct Test<T: Sync = &'static RefLeaf<'static, u8>>(T);
+/// ```
+mod leaf_is_not_send_sync {}

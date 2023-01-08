@@ -20,7 +20,8 @@
 use super::leaf::Key;
 use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
 use crate::allocator::Allocator;
-use crate::list::PersistentAlloc;
+use crate::options::{LeafSize, ListOptions};
+use crate::PersistentAlloc;
 use alloc::alloc::{handle_alloc_error, Layout};
 use cell_ref::{Cell, CellExt};
 use core::cmp::Ordering;
@@ -59,10 +60,10 @@ impl<L: LeafRef> RefUnwindSafe for AllocItem<L> {}
 
 #[repr(align(4))]
 pub struct InternalNode<L: LeafRef> {
-    _align: [L::Align; 0],
+    _align: [<L::Options as ListOptions<L>>::Align; 0],
     next: Cell<InternalNext<L>>,
     down: Cell<DownUnion<L>>,
-    pub size: Cell<L::Size>,
+    pub size: Cell<LeafSize<L>>,
     pub len: Cell<usize>,
     pub key: Cell<Option<Key<L>>>,
 }
@@ -162,7 +163,7 @@ impl<L: LeafRef> InternalNode<L> {
         });
     }
 
-    pub fn size(&self) -> L::Size {
+    pub fn size(&self) -> LeafSize<L> {
         self.size.get()
     }
 }
@@ -267,7 +268,7 @@ impl<L: LeafRef> NodeRef for InternalNodeRef<L> {
         (**self).set_next(next);
     }
 
-    fn size(&self) -> L::Size {
+    fn size(&self) -> LeafSize<L> {
         (**self).size()
     }
 

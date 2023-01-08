@@ -43,6 +43,8 @@ use allocator_fallback as allocator;
 
 pub mod basic;
 mod list;
+pub mod options;
+mod persistent_alloc;
 #[cfg(test)]
 mod tests;
 
@@ -50,4 +52,5 @@ mod tests;
 pub use list::debug;
 pub use list::{AllocItem, LeafNext, LeafRef, SetNextParams};
 pub use list::{IntoIter, Iter, SkipList};
-pub use list::{NoSize, StoreKeys, StoreKeysOption};
+pub use options::{ListOptions, Options};
+use persistent_alloc::PersistentAlloc;

@@ -17,9 +17,11 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::node::{InternalNodeRef, LeafRef, Next, NodeRef};
-use super::{min_node_length, PersistentAlloc};
+use super::min_node_length;
+use super::node::{InternalNodeRef, Next, NodeRef};
 use crate::allocator::Allocator;
+use crate::options::LeafSize;
+use crate::PersistentAlloc;
 use core::iter::FusedIterator;
 
 pub struct Split<N: NodeRef> {
@@ -39,7 +41,7 @@ pub struct InternalNodeSetup<N: NodeRef> {
     /// Number of children.
     len: usize,
     /// Sum of child sizes.
-    size: <N::Leaf as LeafRef>::Size,
+    size: LeafSize<N::Leaf>,
 }
 
 impl<N: NodeRef> InternalNodeSetup<N> {

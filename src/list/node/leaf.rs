@@ -18,32 +18,12 @@
  */
 
 use super::{AllocItem, Down, InternalNodeRef, Next, NodeRef};
-use core::fmt::{self, Debug};
+use crate::options::{LeafSize, ListOptions, StoreKeysPriv};
 use core::ops::{AddAssign, SubAssign};
 use core::ptr::NonNull;
 
-mod key;
-use key::StoreKeysOptionPriv;
-pub use key::{StoreKeys, StoreKeysOption};
-
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NoSize;
-
-impl Debug for NoSize {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "∅")
-    }
-}
-
-impl AddAssign for NoSize {
-    fn add_assign(&mut self, _rhs: Self) {}
-}
-
-impl SubAssign for NoSize {
-    fn sub_assign(&mut self, _rhs: Self) {}
-}
-
-pub type Key<L> = <<L as LeafRef>::StoreKeys as StoreKeysOptionPriv<L>>::Key;
+type StoreKeys<L> = <<L as LeafRef>::Options as ListOptions<L>>::StoreKeys;
+pub type Key<L> = <StoreKeys<L> as StoreKeysPriv<L>>::Key;
 
 /// # Safety
 ///
@@ -62,15 +42,13 @@ pub type Key<L> = <<L as LeafRef>::StoreKeys as StoreKeysOptionPriv<L>>::Key;
 ///   all clones of `s` (transitively and symmetrically) must behave as if that
 ///   same operation were performed on them.
 pub unsafe trait LeafRef: Clone {
+    type Options: ListOptions<Self>;
     const FANOUT: usize = 8;
-    type Size: Clone + Default + Eq + AddAssign + SubAssign;
-    type StoreKeys: StoreKeysOption<Self>;
-    type Align;
 
     fn next(&self) -> Option<LeafNext<Self>>;
     fn set_next(params: SetNextParams<'_, Self>);
-    fn size(&self) -> Self::Size {
-        Self::Size::default()
+    fn size(&self) -> LeafSize<Self> {
+        Default::default()
     }
 }
 
@@ -111,7 +89,7 @@ impl<L: LeafRef> NodeRef for L {
         ));
     }
 
-    fn size(&self) -> L::Size {
+    fn size(&self) -> LeafSize<Self> {
         LeafRef::size(self)
     }
 
@@ -127,7 +105,7 @@ impl<L: LeafRef> NodeRef for L {
     }
 
     fn key(&self) -> Option<Key<Self>> {
-        L::StoreKeys::as_key(self)
+        StoreKeys::<Self>::as_key(self)
     }
 }
 

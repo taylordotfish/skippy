@@ -20,6 +20,7 @@
 use super::min_node_length;
 use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use super::traverse::{get_nth_sibling, get_previous, get_previous_info};
+use crate::options::LeafSize;
 use cell_ref::CellExt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,11 +36,11 @@ struct Removal<N: NodeRef> {
     pub child: N,
     pub kind: RemovalKind,
     /// Change in total list size due to the initial leaf removal.
-    pub diff: <N::Leaf as LeafRef>::Size,
+    pub diff: LeafSize<N::Leaf>,
 }
 
 impl<N: NodeRef> Removal<N> {
-    pub fn remove(child: N, diff: <N::Leaf as LeafRef>::Size) -> Self {
+    pub fn remove(child: N, diff: LeafSize<N::Leaf>) -> Self {
         Self {
             kind: RemovalKind::Remove,
             child,
@@ -47,7 +48,7 @@ impl<N: NodeRef> Removal<N> {
         }
     }
 
-    pub fn update(child: N, diff: <N::Leaf as LeafRef>::Size) -> Self {
+    pub fn update(child: N, diff: LeafSize<N::Leaf>) -> Self {
         Self {
             kind: RemovalKind::Update,
             child,

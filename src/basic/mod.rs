@@ -17,20 +17,19 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use core::ops::{AddAssign, SubAssign};
-
+pub mod options;
 mod rc;
 mod reference;
 
+pub use options::{BasicOptions, Options};
 pub use rc::RcLeaf;
 pub use reference::RefLeaf;
 
 pub trait BasicLeaf {
+    type Options: BasicOptions;
     const FANOUT: usize = 8;
-    type Size: Clone + Default + Ord + AddAssign + SubAssign;
-    type StoreKeys;
 
-    fn size(&self) -> Self::Size {
-        Self::Size::default()
+    fn size(&self) -> <Self::Options as BasicOptions>::SizeType {
+        Default::default()
     }
 }
