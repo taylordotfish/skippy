@@ -53,5 +53,5 @@ mod tests;
 pub use list::debug;
 pub use list::{AllocItem, LeafNext, LeafRef, SetNextParams};
 pub use list::{IntoIter, Iter, SkipList};
-pub use options::{ListOptions, Options};
+pub use options::{LeafSize, ListOptions, NoSize, Options};
 use persistent_alloc::PersistentAlloc;
