@@ -38,6 +38,7 @@ extern crate alloc;
 #[cfg(feature = "allocator_api")]
 use alloc::alloc as allocator;
 
+#[cfg(not(feature = "allocator_api"))]
 #[cfg(feature = "allocator-fallback")]
 use allocator_fallback as allocator;
 
