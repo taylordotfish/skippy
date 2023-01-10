@@ -17,7 +17,11 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! Skip list options.
+
 use crate::LeafRef;
+#[cfg(doc)]
+use crate::{LeafNext, SkipList};
 use core::convert::Infallible;
 use core::fmt;
 use core::marker::PhantomData;
@@ -56,6 +60,11 @@ impl<T: Clone> StoreKeysPriv<T> for Bool<true> {
     }
 }
 
+/// A no-op, zero-sized size type for lists whose items don't need a notion of
+/// size.
+///
+/// This type can be used as the `SizeType` parameter in [`Options`], which
+/// corresponds to [`ListOptions::SizeType`].
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NoSize;
 
@@ -82,8 +91,29 @@ mod sealed {
 /// This is a sealed trait; use the [`Options`] type, which implements this
 /// trait.
 pub trait ListOptions<T>: sealed::Sealed {
+    /// The type that represents the size of an item in a [`SkipList`].
+    ///
+    /// This could be something simple like [`usize`], or something more
+    /// complex. For correctness, it should conceptually represent an unsigned
+    /// integer or collection of unsigned integers---returning negative values
+    /// from [`LeafRef::size`] will produce incorrect results.
     type SizeType: Clone + Default + Eq + AddAssign + SubAssign;
+
+    /// Whether or not to store keys representing items in the internal parts
+    /// of the list.
+    ///
+    /// This enables methods like [`SkipList::find`] and [`SkipList::insert`]
+    /// to be used on sorted lists.
     type StoreKeys: StoreKeys<T>;
+
+    /// The minimum alignment that [`LeafNext::Data`] should have. This can
+    /// help enable certain hacks like [tagged pointers].
+    ///
+    /// Specifically, the pointer in [`LeafNext::Data`] will be aligned to at
+    /// least the alignment of this type.
+    ///
+    /// If you have no special alignment requirements, this can be
+    /// [`()`](unit).
     type Align;
 }
 

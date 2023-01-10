@@ -198,7 +198,7 @@ where
     Ok(())
 }
 
-pub fn fmt_leaf<L>(
+fn fmt_leaf<L>(
     state: &mut State<L>,
     f: &mut Formatter<'_>,
     node: L,

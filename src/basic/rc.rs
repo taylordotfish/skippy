@@ -28,6 +28,8 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
 
+/// Stores data of type `T`. <code>[Rc]\<[RcLeaf]\<T>></code> implements
+/// [`LeafRef`] and can be used with [`SkipList`](crate::SkipList).
 #[repr(align(2))]
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct RcLeaf<T> {
@@ -36,6 +38,7 @@ pub struct RcLeaf<T> {
 }
 
 impl<T> RcLeaf<T> {
+    /// Creates a new [`RcLeaf<T>`].
     pub fn new(data: T) -> Self {
         Self {
             data,
@@ -43,6 +46,7 @@ impl<T> RcLeaf<T> {
         }
     }
 
+    /// Takes ownership of the inner value of type `T`.
     pub fn into_inner(this: Self) -> T {
         this.data
     }

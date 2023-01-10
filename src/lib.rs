@@ -51,7 +51,6 @@ mod tests;
 
 #[cfg(skippy_debug)]
 pub use list::debug;
-pub use list::{AllocItem, LeafNext, LeafRef, SetNextParams};
-pub use list::{IntoIter, Iter, SkipList};
+pub use list::{iter, AllocItem, LeafNext, LeafRef, SetNextParams, SkipList};
 pub use options::{LeafSize, ListOptions, NoSize, Options};
 use persistent_alloc::PersistentAlloc;

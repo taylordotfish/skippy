@@ -28,6 +28,8 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use tagged_pointer::TaggedPtr;
 
+/// Stores data of type `T`. <code>[&](&)[RefLeaf]\<T></code> implements
+/// [`LeafRef`] and can be used with [`SkipList`](crate::SkipList).
 #[repr(align(2))]
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub struct RefLeaf<'a, T> {
@@ -37,6 +39,7 @@ pub struct RefLeaf<'a, T> {
 }
 
 impl<'a, T> RefLeaf<'a, T> {
+    /// Creates a new [`RefLeaf<'a, T>`].
     pub fn new(data: T) -> Self {
         Self {
             data,
@@ -45,6 +48,7 @@ impl<'a, T> RefLeaf<'a, T> {
         }
     }
 
+    /// Takes ownership of the inner value of type `T`.
     pub fn into_inner(this: Self) -> T {
         this.data
     }
@@ -131,8 +135,8 @@ where
 }
 
 #[cfg(any(doc, doctest))]
-/// <code>[&](reference)[RefLeaf]</code> cannot implement [`Send`] or [`Sync`],
-/// as this would make it unsound to implement [`LeafRef`].
+/// <code>[&](&)[RefLeaf]</code> cannot implement [`Send`] or [`Sync`], as this
+/// would make it unsound to implement [`LeafRef`].
 ///
 /// ```
 /// use skippy::basic::RefLeaf;

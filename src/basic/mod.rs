@@ -17,6 +17,19 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! “Basic” implementations of [`LeafRef`] that store data of a given type.
+//!
+//! This module provides two types that, when wrapped in the appropriate
+//! reference-like type, implement [`LeafRef`]:
+//!
+//! * [`RefLeaf`], where <code>[&](&)[RefLeaf]</code> implements [`LeafRef`].
+//! * [`RcLeaf`], where <code>[Rc]\<[RcLeaf]\></code> implements [`LeafRef`].
+//!
+//! [Rc]: alloc::rc::Rc
+
+#[cfg(doc)]
+use crate::LeafRef;
+
 pub mod options;
 mod rc;
 mod reference;
@@ -25,10 +38,21 @@ pub use options::{BasicOptions, Options};
 pub use rc::RcLeaf;
 pub use reference::RefLeaf;
 
+/// In order to use the basic implementations of [`LeafRef`] in this module,
+/// the type of the stored data must implement this trait.
 pub trait BasicLeaf {
+    /// Options that configure the list; see [`BasicOptions`] and [`Options`].
     type Options: BasicOptions;
+
+    /// The maximum amount of children each node in the list can have.
+    ///
+    /// If this is less than 3, it will be treated as 3.
     const FANOUT: usize = 8;
 
+    /// Gets the size of this item.
+    ///
+    /// By default, this method returns [`Default::default()`], which should be
+    /// a zero-like value.
     fn size(&self) -> <Self::Options as BasicOptions>::SizeType {
         Default::default()
     }

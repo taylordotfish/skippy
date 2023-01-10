@@ -23,7 +23,8 @@ use cell_ref::CellExt;
 use core::borrow::Borrow;
 use core::cmp::Ordering;
 use core::convert::TryFrom;
-use core::iter::{self, FusedIterator};
+use core::iter::once;
+use core::marker::PhantomData;
 use core::mem;
 
 #[cfg(skippy_debug)]
@@ -31,6 +32,7 @@ pub mod debug;
 mod destroy;
 mod destroy_safety;
 mod insert;
+pub mod iter;
 mod node;
 mod remove;
 mod split;
@@ -40,6 +42,7 @@ use crate::PersistentAlloc;
 use destroy::{deconstruct, destroy_node_list};
 use destroy_safety::SetUnsafeOnDrop;
 use insert::insert_after;
+use iter::Iter;
 pub use node::{AllocItem, LeafNext, LeafRef, SetNextParams};
 use node::{Down, InternalNodeRef, Key, Next, NodeRef, SizeExt};
 use remove::remove;
@@ -59,6 +62,8 @@ fn roots_match<L: LeafRef>(a: &Down<L>, b: &Down<L>) -> bool {
     Internal::try_from(a) == Internal::try_from(b)
 }
 
+/// Propagate a change in the size of an item (or the item itself, which could
+/// change [`Key`]s) throughout the list.
 fn propagate_update_diff<N: NodeRef>(
     node: N,
     mut key: Option<Key<N::Leaf>>,
@@ -93,6 +98,27 @@ fn propagate_update_diff<N: NodeRef>(
     }
 }
 
+/// A flexible intrusive skip list with worst-case non-amortized O(log n)
+/// insertions and removals.
+///
+/// # Concurrency
+///
+/// This type is neither [`Send`] nor [`Sync`], and `L` should not implement
+/// either of those traits either. However, if you're using a [`SkipList`] and
+/// items of type `L` internally within another type, and you can guarantee
+/// that, under certain conditions, no other thread could possibly use that
+/// particular skip list or its items, it may be safe to send that skip list
+/// and all of its items to another thread (but this must be internal---users
+/// cannot have direct access to the skip list or items).
+///
+/// Similarly, if you can guarantee that, under certain conditions, no thread
+/// could possibly call any methods of [`SkipList`] (with that particular skip
+/// list or involving any of its items, even when called on a different skip
+/// list) *except* for `&self` methods (non-methods are okay), it may be safe
+/// to use that skip list and those items immutably from multiple threads
+/// concurrently (which could involve sending <code>[&](&)[SkipList]</code> and
+/// `L` across threads). Again, this must be internal---users cannot have
+/// direct access to the skip list or items.
 pub struct SkipList<L, A = Global>
 where
     L: LeafRef,
@@ -100,13 +126,17 @@ where
 {
     alloc: PersistentAlloc<A>,
     root: Option<Down<L>>,
+    /// Ensures that [`Self`] isn't [`Send`] or [`Sync`].
+    phantom: PhantomData<*mut ()>,
 }
 
 impl<L: LeafRef> SkipList<L> {
+    /// Creates a new skip list.
     pub fn new() -> Self {
         Self::new_in(Global)
     }
 
+    /// Gets the item directly after `item`.
     pub fn next(item: L) -> Option<L> {
         let mut node = match NodeRef::next(&item)? {
             Next::Sibling(node) => return Some(node),
@@ -125,6 +155,7 @@ impl<L: LeafRef> SkipList<L> {
         }
     }
 
+    /// Gets the item directly before `item`.
     pub fn previous(item: L) -> Option<L> {
         let mut node = match get_previous(item)? {
             Next::Sibling(node) => return Some(node),
@@ -143,16 +174,8 @@ impl<L: LeafRef> SkipList<L> {
         }
     }
 
-    pub fn update<F>(item: L, update: F)
-    where
-        F: FnOnce(),
-    {
-        let old_size = item.size();
-        update();
-        let new_size = item.size();
-        propagate_update_diff(item, None, old_size, new_size);
-    }
-
+    /// Creates an iterator that starts at `item`.
+    ///
     /// The returned iterator will yield `item` as its first element.
     pub fn iter_at(item: L) -> Iter<L> {
         Iter(Some(item))
@@ -164,6 +187,7 @@ where
     L: LeafRef,
     A: Allocator,
 {
+    /// Creates a new skip list with the given allocator.
     pub fn new_in(alloc: A) -> Self
     where
         A: 'static,
@@ -171,13 +195,24 @@ where
         Self {
             alloc: PersistentAlloc::new(alloc),
             root: None,
+            phantom: PhantomData,
         }
     }
 
+    /// Gets the total size of the list.
+    ///
+    /// This is the sum of [`L::size`](LeafRef::size) for every item in the
+    /// list.
     pub fn size(&self) -> LeafSize<L> {
         self.root.as_ref().map_or_else(Default::default, |r| r.size())
     }
 
+    /// Gets an item by index.
+    ///
+    /// Note that if there are items with a size of 0, this method will return
+    /// the first non–zero-sized item at `index`, or the last item in the list
+    /// if `index` is [`self.size()`](Self::size) and the list ends with a
+    /// zero-sized item.
     pub fn get<S>(&self, index: &S) -> Option<L>
     where
         S: Ord + ?Sized,
@@ -186,9 +221,17 @@ where
         self.get_with_cmp(|size| size.borrow().cmp(index))
     }
 
+    /// Gets an item by index with a size type that [`LeafSize<L>`] can't be
+    /// borrowed as.
+    ///
     /// For this method to yield correct results, `S` and [`LeafSize<L>`] must
     /// form a total order ([`PartialOrd::partial_cmp`] should always return
     /// [`Some`]).
+    ///
+    /// Note that if there are items with a size of 0, this method will return
+    /// the first non–zero-sized item at `index`, or the last item in the list
+    /// if `index` is [`self.size()`](Self::size) and the list ends with a
+    /// zero-sized item.
     ///
     /// # Panics
     ///
@@ -207,11 +250,16 @@ where
         })
     }
 
-    /// Gets the item at the given index using the given comparison function.
+    /// Gets an item by index using the given comparison function.
     ///
     /// `cmp` checks whether its argument is less than, equal to, or greater
-    /// than the desired item. Thus, the argument provided to `cmp` is
+    /// than the desired index. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
+    ///
+    /// Note that if there are items with a size of 0, this method will return
+    /// the first non–zero-sized item at the desired index, or the last item in
+    /// the list if the desired index is [`self.size()`](Self::size) and the
+    /// list ends with a zero-sized item.
     pub fn get_with_cmp<F>(&self, cmp: F) -> Option<L>
     where
         F: Fn(&LeafSize<L>) -> Ordering,
@@ -247,6 +295,7 @@ where
         }
     }
 
+    /// Gets the index of `item`.
     pub fn index(&self, item: L) -> LeafSize<L> {
         fn add_siblings<N: NodeRef>(
             mut node: N,
@@ -282,12 +331,24 @@ where
 impl<L, A> SkipList<L, A>
 where
     L: LeafRef,
-    A: Allocator + 'static,
+    A: Allocator,
 {
+    /// Inserts `item` directly after `pos`.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if `item` is
+    /// already in a list. Memory may be leaked in this case.
     pub fn insert_after(&mut self, pos: L, item: L) {
-        self.insert_after_from(pos, iter::once(item));
+        self.insert_after_from(pos, once(item));
     }
 
+    /// Inserts the items in `items` directly after `pos`.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if any items
+    /// in `items` are already in a list. Memory may be leaked in this case.
     pub fn insert_after_from<I>(&mut self, pos: L, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -303,10 +364,24 @@ where
         self.root = Some(result.new_root);
     }
 
+    /// Inserts `item` directly after `pos`, or at the start of the list if
+    /// `pos` is [`None`].
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if `item` is
+    /// already in a list. Memory may be leaked in this case.
     pub fn insert_after_opt(&mut self, pos: Option<L>, item: L) {
-        self.insert_after_opt_from(pos, iter::once(item));
+        self.insert_after_opt_from(pos, once(item));
     }
 
+    /// Inserts the items in `items` directly after `pos`, or at the start of
+    /// the list if `pos` is [`None`].
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if any items
+    /// in `items` are already in a list. Memory may be leaked in this case.
     pub fn insert_after_opt_from<I>(&mut self, pos: Option<L>, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -318,10 +393,22 @@ where
         }
     }
 
+    /// Inserts `item` directly before `pos`.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if `item` is
+    /// already in a list. Memory may be leaked in this case.
     pub fn insert_before(&mut self, pos: L, item: L) {
-        self.insert_before_from(pos, iter::once(item));
+        self.insert_before_from(pos, once(item));
     }
 
+    /// Inserts the items in `items` directly before `pos`.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if any items
+    /// in `items` are already in a list. Memory may be leaked in this case.
     pub fn insert_before_from<I>(&mut self, pos: L, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -329,10 +416,24 @@ where
         self.insert_after_opt_from(SkipList::previous(pos), items);
     }
 
+    /// Inserts `item` directly before `pos`, or at the end of the list if
+    /// `pos` is [`None`].
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if `item` is
+    /// already in a list. Memory may be leaked in this case.
     pub fn insert_before_opt(&mut self, pos: Option<L>, item: L) {
-        self.insert_before_opt_from(pos, iter::once(item));
+        self.insert_before_opt_from(pos, once(item));
     }
 
+    /// Inserts the items in `items` directly before `pos`, or at the end of
+    /// the list if `pos` is [`None`].
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `pos` is not from this list, or if any items
+    /// in `items` are already in a list. Memory may be leaked in this case.
     pub fn insert_before_opt_from<I>(&mut self, pos: Option<L>, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -344,10 +445,22 @@ where
         }
     }
 
+    /// Inserts `item` at the start of the list.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `item` is already in a list. Memory may be
+    /// leaked in this case.
     pub fn push_front(&mut self, item: L) {
-        self.push_front_from(iter::once(item));
+        self.push_front_from(once(item));
     }
 
+    /// Inserts the items in `items` at the start of the list.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if any items in `items` are already in a list.
+    /// Memory may be leaked in this case.
     pub fn push_front_from<I>(&mut self, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -383,7 +496,7 @@ where
         } else if let Some(next) = next {
             debug_assert!(next.next().is_none());
             self.root = Some(Down::Leaf(first.clone()));
-            self.insert_after_from(first, iter.chain(iter::once(next)));
+            self.insert_after_from(first, iter.chain(once(next)));
         } else {
             debug_assert!(self.root.is_none());
             self.root = Some(Down::Leaf(first.clone()));
@@ -391,10 +504,22 @@ where
         }
     }
 
+    /// Inserts `item` at the end of the list.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `item` is already in a list. Memory may be
+    /// leaked in this case.
     pub fn push_back(&mut self, item: L) {
-        self.push_back_from(iter::once(item));
+        self.push_back_from(once(item));
     }
 
+    /// Inserts the items in `items` at the end of the list.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if any items in `items` are already in a list.
+    /// Memory may be leaked in this case.
     pub fn push_back_from<I>(&mut self, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -402,6 +527,12 @@ where
         self.insert_after_opt_from(self.last(), items);
     }
 
+    /// Removes `item` from the list.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `item` is not from this list. Memory may be
+    /// leaked in this case.
     pub fn remove(&mut self, item: L) {
         let root = self.root.as_ref().expect("`item` is not from this list");
         let mut result = remove(item);
@@ -426,6 +557,36 @@ where
     L: LeafRef,
     A: Allocator,
 {
+    /// Updates the [`size`] of an item.
+    ///
+    /// This method should be used whenever `item` needs to be modified in a
+    /// way that could change the value returned by [`L::size`][`size`].
+    /// `update` should be a function that performs the modifications.
+    ///
+    /// [`size`]: LeafRef::size
+    ///
+    /// # Panics
+    ///
+    /// This function may panic if `item` is not from this list.
+    pub fn update<F>(&mut self, item: L, update: F)
+    where
+        F: FnOnce(),
+    {
+        let old_size = item.size();
+        update();
+        let new_size = item.size();
+        propagate_update_diff(item, None, old_size, new_size);
+    }
+
+    /// Replaces an item with another item.
+    ///
+    /// `old` should be an item in this list, while `new` should not be in any
+    /// list.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `old` is not from this list, or if `new` is
+    /// already in a list.
     pub fn replace(&mut self, old: L, new: L) {
         assert!(new.next().is_none(), "new item is already in a list");
         let old_size = old.size();
@@ -461,6 +622,7 @@ where
         );
     }
 
+    /// Gets the first item in the list.
     pub fn first(&self) -> Option<L> {
         let mut node = self.root.clone()?;
         loop {
@@ -471,6 +633,7 @@ where
         }
     }
 
+    /// Gets the last item in the list.
     pub fn last(&self) -> Option<L> {
         let mut node = self.root.clone()?;
         loop {
@@ -481,6 +644,7 @@ where
         }
     }
 
+    /// Gets an iterator over the items in the list.
     pub fn iter(&self) -> Iter<L> {
         Iter(self.first())
     }
@@ -492,10 +656,10 @@ where
     A: Allocator,
     L::Options: ListOptions<L, StoreKeys = Bool<true>>,
 {
+    /// Inserts an item in a sorted list.
     pub fn insert(&mut self, item: L) -> Result<(), L>
     where
         L: Ord,
-        A: 'static,
     {
         self.insert_after_opt(
             match self.find(&item) {
@@ -507,6 +671,7 @@ where
         Ok(())
     }
 
+    /// Finds an item in a sorted list.
     pub fn find<K>(&self, key: &K) -> Result<L, Option<L>>
     where
         K: Ord + ?Sized,
@@ -515,6 +680,9 @@ where
         self.find_with_cmp(|item| item.borrow().cmp(key))
     }
 
+    /// Finds an item in a sorted list with a key type that `L` can't be
+    /// borrowed as.
+    ///
     /// For this method to yield correct results, `K` and `L` must form a
     /// total order ([`PartialOrd::partial_cmp`] should always return
     /// [`Some`]).
@@ -535,7 +703,7 @@ where
         })
     }
 
-    /// Finds an item using the given comparison function.
+    /// Finds an item in a sorted list using the given comparison function.
     ///
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
@@ -618,73 +786,16 @@ where
     }
 }
 
-pub struct Iter<L>(Option<L>);
-
-impl<L: LeafRef> Iterator for Iter<L> {
-    type Item = L;
-
-    fn next(&mut self) -> Option<L> {
-        let leaf = self.0.take();
-        self.0 = leaf.clone().and_then(SkipList::next);
-        leaf
-    }
-}
-
-impl<L: LeafRef> FusedIterator for Iter<L> {}
-
-impl<L, A> IntoIterator for &SkipList<L, A>
+impl<L, A> Extend<L> for SkipList<L, A>
 where
     L: LeafRef,
     A: Allocator,
 {
-    type Item = L;
-    type IntoIter = Iter<L>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
-pub struct IntoIter<L, A>
-where
-    L: LeafRef,
-    A: Allocator,
-{
-    iter: Iter<L>,
-    _list: SkipList<L, A>,
-}
-
-impl<L, A> Iterator for IntoIter<L, A>
-where
-    L: LeafRef,
-    A: Allocator,
-{
-    type Item = L;
-
-    fn next(&mut self) -> Option<L> {
-        self.iter.next()
-    }
-}
-
-impl<L, A> FusedIterator for IntoIter<L, A>
-where
-    L: LeafRef,
-    A: Allocator,
-{
-}
-
-impl<L, A> IntoIterator for SkipList<L, A>
-where
-    L: LeafRef,
-    A: Allocator,
-{
-    type Item = L;
-    type IntoIter = IntoIter<L, A>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter {
-            iter: Iter(self.first()),
-            _list: self,
-        }
+    /// Equivalent to [`Self::push_back_from`].
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = L>,
+    {
+        self.push_back_from(iter);
     }
 }
