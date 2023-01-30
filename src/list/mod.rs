@@ -43,7 +43,7 @@ use destroy::{deconstruct, destroy_node_list};
 use destroy_safety::SetUnsafeOnDrop;
 use insert::insert_after;
 use iter::Iter;
-pub use node::{AllocItem, LeafNext, LeafRef, SetNextParams};
+pub use node::{AllocItem, LeafNext, LeafRef, This};
 use node::{Down, InternalNodeRef, Key, Next, NodeRef, SizeExt};
 use remove::remove;
 use traverse::{get_last_sibling, get_parent_info};
@@ -119,6 +119,12 @@ fn propagate_update_diff<N: NodeRef>(
 /// concurrently (which could involve sending <code>[&](&)[SkipList]</code> and
 /// `L` across threads). Again, this must be internal---users cannot have
 /// direct access to the skip list or items.
+///
+/// Additionally, no methods of the skip list to be used concurrently should
+/// ever have been called with leaf items (of type `L`) that already belonged
+/// to another list. Panics may occur when this is done, but whether or not a
+/// panic occurs, this can result in the skip list containing items from
+/// another list.
 pub struct SkipList<L, A = Global>
 where
     L: LeafRef,

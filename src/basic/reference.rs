@@ -20,7 +20,7 @@
 use super::options::BasicOptions;
 use super::BasicLeaf;
 use crate::options::{LeafSize, StoreKeys, TypedOptions};
-use crate::{LeafNext, LeafRef, SetNextParams};
+use crate::{LeafNext, LeafRef, This};
 use core::cell::Cell;
 use core::fmt;
 use core::marker::PhantomData;
@@ -104,8 +104,7 @@ where
         })
     }
 
-    fn set_next(params: SetNextParams<'_, Self>) {
-        let (this, next) = params.get();
+    fn set_next(this: This<&'_ Self>, next: Option<LeafNext<Self>>) {
         this.next.set(next.map(|n| match n {
             LeafNext::Leaf(leaf) => TaggedPtr::new(NonNull::from(leaf), 0),
             LeafNext::Data(data) => TaggedPtr::new(data.cast(), 1),

@@ -20,7 +20,7 @@
 use super::options::BasicOptions;
 use super::BasicLeaf;
 use crate::options::{LeafSize, StoreKeys, TypedOptions};
-use crate::{LeafNext, LeafRef, SetNextParams};
+use crate::{LeafNext, LeafRef, This};
 use alloc::rc::Rc;
 use core::cell::Cell;
 use core::fmt;
@@ -103,8 +103,7 @@ where
         })
     }
 
-    fn set_next(params: SetNextParams<'_, Self>) {
-        let (this, next) = params.get();
+    fn set_next(this: This<&'_ Self>, next: Option<LeafNext<Self>>) {
         this.next.set(next.map(|n| match n {
             LeafNext::Leaf(leaf) => TaggedPtr::new(
                 // SAFETY: `Rc::into_raw` always returns non-null pointers.

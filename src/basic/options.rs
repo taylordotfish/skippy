@@ -17,6 +17,8 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
+//! Basic skip list options.
+
 #[cfg(doc)]
 use super::BasicLeaf;
 pub use crate::options::{Bool, NoSize};
@@ -32,7 +34,17 @@ mod sealed {
 /// This is a sealed trait; use the [`Options`] type, which implements this
 /// trait.
 pub trait BasicOptions: sealed::Sealed {
+    /// The type that represents the size of an item in a [`SkipList`].
+    ///
+    /// See [`ListOptions::SizeType`](crate::ListOptions::SizeType).
+    ///
+    /// [`SkipList`]: crate::SkipList
     type SizeType: Clone + Default + Eq + AddAssign + SubAssign;
+
+    /// Whether or not to store keys representing items in the internal parts
+    /// of the list.
+    ///
+    /// See [`ListOptions::StoreKeys`](crate::ListOptions::StoreKeys).
     type StoreKeys;
 }
 

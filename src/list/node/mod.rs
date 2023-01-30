@@ -23,7 +23,7 @@ pub mod internal;
 pub mod leaf;
 
 pub use internal::{AllocItem, InternalNodeRef};
-pub use leaf::{Key, LeafExt, LeafNext, LeafRef, SetNextParams, SizeExt};
+pub use leaf::{Key, LeafExt, LeafNext, LeafRef, SizeExt, This};
 
 pub trait NodeRef: Clone {
     type Leaf: LeafRef;

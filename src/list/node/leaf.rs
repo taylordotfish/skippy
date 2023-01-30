@@ -19,7 +19,7 @@
 
 use super::{AllocItem, Down, InternalNodeRef, Next, NodeRef};
 use crate::options::{LeafSize, ListOptions, StoreKeysPriv};
-use core::ops::{AddAssign, SubAssign};
+use core::ops::{AddAssign, Deref, SubAssign};
 use core::ptr::NonNull;
 
 type StoreKeys<L> = <<L as LeafRef>::Options as ListOptions<L>>::StoreKeys;
@@ -36,9 +36,10 @@ pub type Key<L> = <StoreKeys<L> as StoreKeysPriv<L>>::Key;
 /// * [`Self::next`] must initially return [`None`] until [`Self::set_next`] is
 ///   called.
 ///
-/// * After [`Self::set_next`] is called (with parameter `params`), future
-///   calls to [`Self::next`] must return a value identical to
-///   <code>[params.get()].1</code> until the next call to [`Self::set_next`].
+/// * After [`Self::set_next`] is called (with some `next` parameter), future
+///   calls to [`Self::next`] must return a value identical to the `next`
+///   parameter previously provided to [`Self::set_next`] until the next call
+///   to [`Self::set_next`].
 ///
 /// * Because this type is conceptually a reference, clones produced through
 ///   [`Clone::clone`] must behave identically to the original object. In
@@ -48,7 +49,6 @@ pub type Key<L> = <StoreKeys<L> as StoreKeysPriv<L>>::Key;
 ///
 /// [`SkipList`]: crate::SkipList
 /// [Concurrency section]: crate::SkipList#concurrency
-/// [params.get()]: SetNextParams::get
 pub unsafe trait LeafRef: Clone {
     /// Options that configure the list; see [`ListOptions`] and [`Options`].
     ///
@@ -68,23 +68,19 @@ pub unsafe trait LeafRef: Clone {
 
     /// Sets the item/data that follows this leaf.
     ///
-    /// `params` contains the parameters for what would typically be:
+    /// For safety reasons,[^1] instead of a `&self` parameter, this function
+    /// takes a value of type <code>[This]\<[&](&)[Self]></code>. This type
+    /// implements <code>[Deref]\<[Target](Deref::Target) = [Self]></code>, so
+    /// it can be used similarly to <code>[&](&)[Self]</code>.
     ///
-    /// ```
-    /// # struct LeafNext<L>(L);
-    /// unsafe trait LeafRef: Clone {
-    ///     fn set_next(&self, next: Option<LeafNext<Self>>);
-    /// }
-    /// ```
+    /// This method should store `next` somewhere so that it can be returned
+    /// by [`Self::next`].
     ///
-    /// You can use [`params.get()`][params.get()] to obtain the inner
-    /// parameters; see [`SetNextParams`] for more information.
+    /// [^1]: This prevents an implementation of [`set_next`] from calling
+    /// [`set_next`] on other [`LeafRef`]s.
     ///
-    /// This method should store <code>[params.get()].1</code> somewhere so
-    /// that it can be returned by [`Self::next`].
-    ///
-    /// [params.get()]: SetNextParams::get
-    fn set_next(params: SetNextParams<'_, Self>);
+    /// [`set_next`]: Self::set_next
+    fn set_next(this: This<&'_ Self>, next: Option<LeafNext<Self>>);
 
     /// Gets the size of this item.
     ///
@@ -115,29 +111,18 @@ pub enum LeafNext<L: LeafRef> {
     Data(NonNull<AllocItem<L>>),
 }
 
-/// Parameters for [`LeafRef::set_next`].
+/// A wrapper around a method's `self` parameter.
 ///
-/// This type represents the parameters for what would typically be:
-///
-/// ```
-/// # struct LeafNext<L>(L);
-/// unsafe trait LeafRef: Clone {
-///     fn set_next(&self, next: Option<LeafNext<Self>>);
-/// }
-/// ```
-///
-/// But for safety reasons, a separate type must be provided (this is so
-/// implementations of [`LeafRef::set_next`] can't call [`set_next`] on another
-/// [`LeafRef`].
-///
-/// [`set_next`]: LeafRef::set_next
-///
-/// You can use [`Self::get`] to obtain the inner parameters.
-pub struct SetNextParams<'a, L: LeafRef>(&'a L, Option<LeafNext<L>>);
+/// Instead of `&self`, [`LeafRef::set_next`] takes a parameter of type
+/// <code>[This]\<[&](&)[Self](LeafRef)></code> to enforce certain safety
+/// requirements; see its documentation for more information.
+pub struct This<T>(T);
 
-impl<'a, L: LeafRef> SetNextParams<'a, L> {
-    pub fn get(self) -> (&'a L, Option<LeafNext<L>>) {
-        (self.0, self.1)
+impl<'a, T> Deref for This<&'a T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        self.0
     }
 }
 
@@ -155,13 +140,13 @@ impl<L: LeafRef> NodeRef for L {
     }
 
     fn set_next(&self, next: Option<Next<Self>>) {
-        LeafRef::set_next(SetNextParams(
-            self,
+        LeafRef::set_next(
+            This(self),
             next.map(|next| match next {
                 Next::Sibling(node) => LeafNext::Leaf(node),
                 Next::Parent(node) => LeafNext::Data(node.as_ptr()),
             }),
-        ));
+        );
     }
 
     fn size(&self) -> LeafSize<Self> {
@@ -186,7 +171,7 @@ impl<L: LeafRef> NodeRef for L {
 
 pub trait LeafExt: LeafRef {
     fn set_next_leaf(&self, next: Option<LeafNext<Self>>) {
-        Self::set_next(SetNextParams(self, next));
+        Self::set_next(This(self), next);
     }
 }
 
