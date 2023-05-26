@@ -114,6 +114,8 @@ pub trait ListOptions<T>: sealed::Sealed {
     ///
     /// If you have no special alignment requirements, this can be
     /// [`()`](unit).
+    ///
+    /// [tagged pointers]: tagged_pointer
     type Align;
 }
 
