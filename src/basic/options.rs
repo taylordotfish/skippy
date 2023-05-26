@@ -21,7 +21,8 @@
 
 #[cfg(doc)]
 use super::BasicLeaf;
-pub use crate::options::{Bool, NoSize};
+use crate::options::Fanout;
+pub use crate::options::{Bool, NoSize, Usize};
 use core::marker::PhantomData;
 use core::ops::{AddAssign, SubAssign};
 
@@ -46,6 +47,13 @@ pub trait BasicOptions: sealed::Sealed {
     ///
     /// See [`ListOptions::StoreKeys`](crate::ListOptions::StoreKeys).
     type StoreKeys;
+
+    /// The maximum amount of children each node in the list can have.
+    ///
+    /// If this is less than 3, it will be treated as 3.
+    ///
+    /// See [`ListOptions::Fanout`](crate::ListOptions::Fanout).
+    type Fanout: Fanout;
 }
 
 /// Options for [`BasicLeaf::Options`].
@@ -58,13 +66,16 @@ pub trait BasicOptions: sealed::Sealed {
 /// ------------ | ---------------------------
 /// `SizeType`   | [`BasicOptions::SizeType`]
 /// `STORE_KEYS` | [`BasicOptions::StoreKeys`]
+/// `FANOUT`     | [`BasicOptions::Fanout`]
 #[rustfmt::skip]
 pub type Options<
     SizeType = NoSize,
     const STORE_KEYS: bool = false,
+    const FANOUT: usize = 8,
 > = TypedOptions<
     SizeType,
     Bool<STORE_KEYS>,
+    Usize<FANOUT>,
 >;
 
 /// Like [`Options`], but uses types instead of const parameters.
@@ -75,28 +86,35 @@ pub type Options<
 pub struct TypedOptions<
     SizeType = NoSize,
     StoreKeys = Bool<false>,
+    Fanout = Usize<8>,
 >(PhantomData<fn() -> (
     SizeType,
     StoreKeys,
+    Fanout,
 )>);
 
 #[rustfmt::skip]
 impl<
     SizeType,
     StoreKeys,
+    Fanout,
 > sealed::Sealed for TypedOptions<
     SizeType,
     StoreKeys,
+    Fanout,
 > {}
 
 #[rustfmt::skip]
 impl<
     SizeType: Clone + Default + Eq + AddAssign + SubAssign,
     StoreKeys,
+    Fanout: self::Fanout,
 > BasicOptions for TypedOptions<
     SizeType,
     StoreKeys,
+    Fanout,
 > {
     type SizeType = SizeType;
     type StoreKeys = StoreKeys;
+    type Fanout = Fanout;
 }

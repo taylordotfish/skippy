@@ -90,9 +90,9 @@ where
     type Options = TypedOptions<
         <T::Options as BasicOptions>::SizeType,
         <T::Options as BasicOptions>::StoreKeys,
+        <T::Options as BasicOptions>::Fanout,
         RcLeaf<T>, /* Align */
     >;
-    const FANOUT: usize = T::FANOUT;
 
     fn next(&self) -> Option<LeafNext<Self>> {
         let (ptr, tag) = self.next.get()?.get();

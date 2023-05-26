@@ -30,6 +30,9 @@ use core::ops::{AddAssign, SubAssign};
 /// Represents a [`bool`].
 pub struct Bool<const B: bool>(());
 
+/// Represents a [`usize`].
+pub struct Usize<const N: usize>(());
+
 mod detail {
     pub trait StoreKeysPriv<T> {
         type Key: Clone;
@@ -38,6 +41,10 @@ mod detail {
             let _ = value;
             None
         }
+    }
+
+    pub trait FanoutPriv {
+        const VALUE: usize;
     }
 }
 
@@ -58,6 +65,14 @@ impl<T: Clone> StoreKeysPriv<T> for Bool<true> {
     fn as_key(value: &T) -> Option<T> {
         Some(value.clone())
     }
+}
+
+/// Trait bound on [`ListOptions::Fanout`].
+pub trait Fanout: FanoutPriv {}
+
+impl<const N: usize> Fanout for Usize<N> {}
+impl<const N: usize> FanoutPriv for Usize<N> {
+    const VALUE: usize = N;
 }
 
 /// A no-op, zero-sized size type for lists whose items don't need a notion of
@@ -106,6 +121,11 @@ pub trait ListOptions<T>: sealed::Sealed {
     /// to be used on sorted lists.
     type StoreKeys: StoreKeys<T>;
 
+    /// The maximum number of children each node in the list can have.
+    ///
+    /// If this is less than 3, it will be treated as 3.
+    type Fanout: Fanout;
+
     /// The minimum alignment that [`LeafNext::Data`] should have. This can
     /// help enable certain hacks like [tagged pointers].
     ///
@@ -134,15 +154,18 @@ pub type LeafSize<L> = <<L as LeafRef>::Options as ListOptions<L>>::SizeType;
 /// ------------ | --------------------------
 /// `SizeType`   | [`ListOptions::SizeType`]
 /// `STORE_KEYS` | [`ListOptions::StoreKeys`]
+/// `FANOUT`     | [`ListOptions::Fanout`]
 /// `Align`      | [`ListOptions::Align`]
 #[rustfmt::skip]
 pub type Options<
     SizeType = NoSize,
     const STORE_KEYS: bool = false,
+    const FANOUT: usize = 8,
     Align = (),
 > = TypedOptions<
     SizeType,
     Bool<STORE_KEYS>,
+    Usize<FANOUT>,
     Align,
 >;
 
@@ -154,10 +177,12 @@ pub type Options<
 pub struct TypedOptions<
     SizeType = NoSize,
     StoreKeys = Bool<false>,
+    Fanout = Usize<8>,
     Align = (),
 >(PhantomData<fn() -> (
     SizeType,
     StoreKeys,
+    Fanout,
     Align,
 )>);
 
@@ -165,10 +190,12 @@ pub struct TypedOptions<
 impl<
     SizeType,
     StoreKeys,
+    Fanout,
     Align,
 > sealed::Sealed for TypedOptions<
     SizeType,
     StoreKeys,
+    Fanout,
     Align,
 > {}
 
@@ -177,13 +204,16 @@ impl<
     T,
     SizeType: Clone + Default + Eq + AddAssign + SubAssign,
     StoreKeys: self::StoreKeys<T>,
+    Fanout: self::Fanout,
     Align,
 > ListOptions<T> for TypedOptions<
     SizeType,
     StoreKeys,
+    Fanout,
     Align,
 > {
     type SizeType = SizeType;
     type StoreKeys = StoreKeys;
+    type Fanout = Fanout;
     type Align = Align;
 }

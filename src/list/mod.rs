@@ -54,7 +54,8 @@ fn min_node_length<L: LeafRef>() -> usize {
 }
 
 fn max_node_length<L: LeafRef>() -> usize {
-    L::FANOUT.max(3)
+    use crate::options::FanoutPriv;
+    <L::Options as ListOptions<L>>::Fanout::VALUE.max(3)
 }
 
 fn roots_match<L: LeafRef>(a: &Down<L>, b: &Down<L>) -> bool {

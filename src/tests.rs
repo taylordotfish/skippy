@@ -49,8 +49,8 @@ impl BasicLeaf for Data {
     type Options = basic::options::Options<
         usize, /* SizeType */
         true,  /* STORE_KEYS */
+        4,     /* FANOUT */
     >;
-    const FANOUT: usize = 4;
 
     fn size(&self) -> usize {
         self.size.get()

@@ -94,9 +94,9 @@ where
     type Options = TypedOptions<
         <T::Options as BasicOptions>::SizeType,
         <T::Options as BasicOptions>::StoreKeys,
+        <T::Options as BasicOptions>::Fanout,
         RefLeaf<'a, T>, /* Align */
     >;
-    const FANOUT: usize = T::FANOUT;
 
     fn next(&self) -> Option<LeafNext<Self>> {
         self.next.get().map(|p| match p.get() {

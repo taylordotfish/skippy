@@ -45,11 +45,6 @@ pub trait BasicLeaf {
     /// Options that configure the list; see [`BasicOptions`] and [`Options`].
     type Options: BasicOptions;
 
-    /// The maximum amount of children each node in the list can have.
-    ///
-    /// If this is less than 3, it will be treated as 3.
-    const FANOUT: usize = 8;
-
     /// Gets the size of this item.
     ///
     /// By default, this method returns [`Default::default()`], which should be

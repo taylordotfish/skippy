@@ -55,11 +55,6 @@ pub unsafe trait LeafRef: Clone {
     /// [`Options`]: crate::Options
     type Options: ListOptions<Self>;
 
-    /// The maximum number of children each node in the list can have.
-    ///
-    /// If this is less than 3, it will be treated as 3.
-    const FANOUT: usize = 8;
-
     /// Gets the item/data that follows this leaf.
     ///
     /// Leaf items should be able to store the item provided to
