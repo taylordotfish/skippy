@@ -116,7 +116,7 @@ fn propagate_update_diff<N: NodeRef>(
 /// list or involving any of its items, even when called on a different skip
 /// list) *except* for `&self` methods (non-methods are okay), it may be safe
 /// to use that skip list and those items immutably from multiple threads
-/// concurrently (which could involve sending <code>[&](&)[SkipList]</code> and
+/// concurrently (which could involve sending <code>[&][r][SkipList]</code> and
 /// `L` across threads). Again, this must be internal---users cannot have
 /// direct access to the skip list or items.
 ///
@@ -125,6 +125,8 @@ fn propagate_update_diff<N: NodeRef>(
 /// to another list. Panics may occur when this is done, but whether or not a
 /// panic occurs, this can result in the skip list containing items from
 /// another list.
+///
+/// [r]: reference
 pub struct SkipList<L, A = Global>
 where
     L: LeafRef,

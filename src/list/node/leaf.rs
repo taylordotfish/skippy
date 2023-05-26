@@ -69,9 +69,9 @@ pub unsafe trait LeafRef: Clone {
     /// Sets the item/data that follows this leaf.
     ///
     /// For safety reasons,[^1] instead of a `&self` parameter, this function
-    /// takes a value of type <code>[This]\<[&](&)[Self]></code>. This type
+    /// takes a value of type <code>[This]\<[&][r][Self]></code>. This type
     /// implements <code>[Deref]\<[Target](Deref::Target) = [Self]></code>, so
-    /// it can be used similarly to <code>[&](&)[Self]</code>.
+    /// it can be used similarly to <code>[&][r][Self]</code>.
     ///
     /// This method should store `next` somewhere so that it can be returned
     /// by [`Self::next`].
@@ -79,6 +79,7 @@ pub unsafe trait LeafRef: Clone {
     /// [^1]: This prevents an implementation of [`set_next`] from calling
     /// [`set_next`] on other [`LeafRef`]s.
     ///
+    /// [r]: reference
     /// [`set_next`]: Self::set_next
     fn set_next(this: This<&'_ Self>, next: Option<LeafNext<Self>>);
 
@@ -114,8 +115,10 @@ pub enum LeafNext<L: LeafRef> {
 /// A wrapper around a method's `self` parameter.
 ///
 /// Instead of `&self`, [`LeafRef::set_next`] takes a parameter of type
-/// <code>[This]\<[&](&)[Self](LeafRef)></code> to enforce certain safety
+/// <code>[This]\<[&][r][Self](LeafRef)></code> to enforce certain safety
 /// requirements; see its documentation for more information.
+///
+/// [r]: reference
 pub struct This<T>(T);
 
 impl<'a, T> Deref for This<&'a T> {

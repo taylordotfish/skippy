@@ -22,9 +22,10 @@
 //! This module provides two types that, when wrapped in the appropriate
 //! reference-like type, implement [`LeafRef`]:
 //!
-//! * [`RefLeaf`], where <code>[&](&)[RefLeaf]</code> implements [`LeafRef`].
+//! * [`RefLeaf`], where <code>[&][r][RefLeaf]</code> implements [`LeafRef`].
 //! * [`RcLeaf`], where <code>[Rc]\<[RcLeaf]\></code> implements [`LeafRef`].
 //!
+//! [r]: prim@reference
 //! [Rc]: alloc::rc::Rc
 
 #[cfg(doc)]
