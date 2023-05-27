@@ -55,7 +55,7 @@ fn min_node_length<L: LeafRef>() -> usize {
 
 fn max_node_length<L: LeafRef>() -> usize {
     use crate::options::FanoutPriv;
-    <L::Options as ListOptions<L>>::Fanout::VALUE.max(3)
+    <L::Options as ListOptions>::Fanout::VALUE.max(3)
 }
 
 fn roots_match<L: LeafRef>(a: &Down<L>, b: &Down<L>) -> bool {
@@ -663,7 +663,7 @@ impl<L, A> SkipList<L, A>
 where
     L: LeafRef,
     A: Allocator,
-    L::Options: ListOptions<L, StoreKeys = Bool<true>>,
+    L::Options: ListOptions<StoreKeys = Bool<true>>,
 {
     /// Inserts an item in a sorted list.
     pub fn insert(&mut self, item: L) -> Result<(), L>

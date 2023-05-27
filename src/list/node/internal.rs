@@ -64,7 +64,7 @@ impl<L: LeafRef> RefUnwindSafe for AllocItem<L> {}
 
 #[repr(align(4))]
 pub struct InternalNode<L: LeafRef> {
-    _align: [<L::Options as ListOptions<L>>::Align; 0],
+    _align: [<L::Options as ListOptions>::Align; 0],
     next: Cell<InternalNext<L>>,
     down: Cell<DownUnion<L>>,
     pub size: Cell<LeafSize<L>>,

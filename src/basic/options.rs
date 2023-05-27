@@ -21,8 +21,8 @@
 
 #[cfg(doc)]
 use super::BasicLeaf;
-use crate::options::Fanout;
 pub use crate::options::{Bool, NoSize, Usize};
+use crate::options::{Fanout, StoreKeys};
 use core::marker::PhantomData;
 use core::ops::{AddAssign, SubAssign};
 
@@ -46,7 +46,7 @@ pub trait BasicOptions: sealed::Sealed {
     /// of the list.
     ///
     /// See [`ListOptions::StoreKeys`](crate::ListOptions::StoreKeys).
-    type StoreKeys;
+    type StoreKeys: StoreKeys;
 
     /// The maximum amount of children each node in the list can have.
     ///
@@ -107,7 +107,7 @@ impl<
 #[rustfmt::skip]
 impl<
     SizeType: Clone + Default + Eq + AddAssign + SubAssign,
-    StoreKeys,
+    StoreKeys: self::StoreKeys,
     Fanout: self::Fanout,
 > BasicOptions for TypedOptions<
     SizeType,

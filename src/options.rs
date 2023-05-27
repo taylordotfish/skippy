@@ -34,11 +34,10 @@ pub struct Bool<const B: bool>(());
 pub struct Usize<const N: usize>(());
 
 mod detail {
-    pub trait StoreKeysPriv<T> {
-        type Key: Clone;
+    pub trait StoreKeysPriv {
+        type Key<T: Clone>: Clone;
 
-        fn as_key(value: &T) -> Option<Self::Key> {
-            let _ = value;
+        fn as_key<T: Clone>(_value: &T) -> Option<Self::Key<T>> {
             None
         }
     }
@@ -51,18 +50,20 @@ mod detail {
 pub(crate) use detail::*;
 
 /// Trait bound on [`ListOptions::StoreKeys`].
-pub trait StoreKeys<T>: StoreKeysPriv<T> {}
+pub trait StoreKeys: StoreKeysPriv {}
 
-impl<T> StoreKeys<T> for Bool<false> {}
-impl<T> StoreKeysPriv<T> for Bool<false> {
-    type Key = Infallible;
+impl StoreKeys for Bool<false> {}
+
+impl StoreKeysPriv for Bool<false> {
+    type Key<T: Clone> = Infallible;
 }
 
-impl<T: Clone> StoreKeys<T> for Bool<true> {}
-impl<T: Clone> StoreKeysPriv<T> for Bool<true> {
-    type Key = T;
+impl StoreKeys for Bool<true> {}
 
-    fn as_key(value: &T) -> Option<T> {
+impl StoreKeysPriv for Bool<true> {
+    type Key<T: Clone> = T;
+
+    fn as_key<T: Clone>(value: &T) -> Option<T> {
         Some(value.clone())
     }
 }
@@ -71,6 +72,7 @@ impl<T: Clone> StoreKeysPriv<T> for Bool<true> {
 pub trait Fanout: FanoutPriv {}
 
 impl<const N: usize> Fanout for Usize<N> {}
+
 impl<const N: usize> FanoutPriv for Usize<N> {
     const VALUE: usize = N;
 }
@@ -105,13 +107,15 @@ mod sealed {
 ///
 /// This is a sealed trait; use the [`Options`] type, which implements this
 /// trait.
-pub trait ListOptions<T>: sealed::Sealed {
+pub trait ListOptions: sealed::Sealed {
     /// The type that represents the size of an item in a [`SkipList`].
     ///
     /// This could be something simple like [`usize`], or something more
     /// complex. For correctness, it should conceptually represent an unsigned
     /// integer or collection of unsigned integers---returning negative values
     /// from [`LeafRef::size`] will produce incorrect results.
+    ///
+    /// *Default:* [`NoSize`]
     type SizeType: Clone + Default + Eq + AddAssign + SubAssign;
 
     /// Whether or not to store keys representing items in the internal parts
@@ -119,11 +123,15 @@ pub trait ListOptions<T>: sealed::Sealed {
     ///
     /// This enables methods like [`SkipList::find`] and [`SkipList::insert`]
     /// to be used on sorted lists.
-    type StoreKeys: StoreKeys<T>;
+    ///
+    /// *Default:* false
+    type StoreKeys: StoreKeys;
 
     /// The maximum number of children each node in the list can have.
     ///
     /// If this is less than 3, it will be treated as 3.
+    ///
+    /// *Default:* 8
     type Fanout: Fanout;
 
     /// The minimum alignment that [`LeafNext::Data`] should have. This can
@@ -135,6 +143,8 @@ pub trait ListOptions<T>: sealed::Sealed {
     /// If you have no special alignment requirements, this can be
     /// [`()`](unit).
     ///
+    /// *Default*: [`()`]
+    ///
     /// [tagged pointers]: tagged_pointer
     type Align;
 }
@@ -142,7 +152,7 @@ pub trait ListOptions<T>: sealed::Sealed {
 /// Alias of <code>[LeafRef::Options]::[SizeType]</code>.
 ///
 /// [SizeType]: ListOptions::SizeType
-pub type LeafSize<L> = <<L as LeafRef>::Options as ListOptions<L>>::SizeType;
+pub type LeafSize<L> = <<L as LeafRef>::Options as ListOptions>::SizeType;
 
 /// Options for [`LeafRef::Options`].
 ///
@@ -201,12 +211,11 @@ impl<
 
 #[rustfmt::skip]
 impl<
-    T,
     SizeType: Clone + Default + Eq + AddAssign + SubAssign,
-    StoreKeys: self::StoreKeys<T>,
+    StoreKeys: self::StoreKeys,
     Fanout: self::Fanout,
     Align,
-> ListOptions<T> for TypedOptions<
+> ListOptions for TypedOptions<
     SizeType,
     StoreKeys,
     Fanout,

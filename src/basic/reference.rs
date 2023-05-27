@@ -19,7 +19,7 @@
 
 use super::options::BasicOptions;
 use super::BasicLeaf;
-use crate::options::{LeafSize, StoreKeys, TypedOptions};
+use crate::options::{LeafSize, TypedOptions};
 use crate::{LeafNext, LeafRef, This};
 use core::cell::Cell;
 use core::fmt;
@@ -86,11 +86,7 @@ impl<'a, T: fmt::Debug> fmt::Debug for RefLeaf<'a, T> {
     }
 }
 
-unsafe impl<'a, T> LeafRef for &RefLeaf<'a, T>
-where
-    T: BasicLeaf,
-    <T::Options as BasicOptions>::StoreKeys: StoreKeys<Self>,
-{
+unsafe impl<'a, T: BasicLeaf> LeafRef for &RefLeaf<'a, T> {
     type Options = TypedOptions<
         <T::Options as BasicOptions>::SizeType,
         <T::Options as BasicOptions>::StoreKeys,
@@ -122,7 +118,6 @@ where
 impl<'a, T> crate::list::debug::LeafDebug for &RefLeaf<'a, T>
 where
     T: BasicLeaf + fmt::Debug,
-    <T::Options as BasicOptions>::StoreKeys: StoreKeys<Self>,
 {
     type Id = *const RefLeaf<'a, T>;
 

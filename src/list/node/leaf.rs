@@ -22,8 +22,8 @@ use crate::options::{LeafSize, ListOptions, StoreKeysPriv};
 use core::ops::{AddAssign, Deref, SubAssign};
 use core::ptr::NonNull;
 
-type StoreKeys<L> = <<L as LeafRef>::Options as ListOptions<L>>::StoreKeys;
-pub type Key<L> = <StoreKeys<L> as StoreKeysPriv<L>>::Key;
+type StoreKeys<L> = <<L as LeafRef>::Options as ListOptions>::StoreKeys;
+pub type Key<L> = <StoreKeys<L> as StoreKeysPriv>::Key<L>;
 
 /// Represents a *reference* to an item, or “leaf”, in a [`SkipList`].
 ///
@@ -53,7 +53,7 @@ pub unsafe trait LeafRef: Clone {
     /// Options that configure the list; see [`ListOptions`] and [`Options`].
     ///
     /// [`Options`]: crate::Options
-    type Options: ListOptions<Self>;
+    type Options: ListOptions;
 
     /// Gets the item/data that follows this leaf.
     ///
