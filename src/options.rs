@@ -140,7 +140,7 @@ pub trait ListOptions: sealed::Sealed {
     /// If you have no special alignment requirements, this can be
     /// [`()`](unit).
     ///
-    /// *Default*: [`()`]
+    /// *Default*: [`()`](unit)
     ///
     /// [tagged pointers]: tagged_pointer
     type Align;
