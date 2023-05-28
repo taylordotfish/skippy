@@ -53,13 +53,11 @@ pub(crate) use detail::*;
 pub trait StoreKeys: StoreKeysPriv {}
 
 impl StoreKeys for Bool<false> {}
-
 impl StoreKeysPriv for Bool<false> {
     type Key<T: Clone> = Infallible;
 }
 
 impl StoreKeys for Bool<true> {}
-
 impl StoreKeysPriv for Bool<true> {
     type Key<T: Clone> = T;
 
@@ -72,7 +70,6 @@ impl StoreKeysPriv for Bool<true> {
 pub trait Fanout: FanoutPriv {}
 
 impl<const N: usize> Fanout for Usize<N> {}
-
 impl<const N: usize> FanoutPriv for Usize<N> {
     const VALUE: usize = N;
 }
