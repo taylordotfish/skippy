@@ -99,7 +99,7 @@ fn propagate_update_diff<N: NodeRef>(
     }
 }
 
-/// A flexible intrusive skip list with worst-case non-amortized O(log n)
+/// A flexible intrusive skip list with worst-case non-amortized O(log *n*)
 /// insertions and removals.
 ///
 /// # Concurrency
@@ -127,6 +127,11 @@ fn propagate_update_diff<N: NodeRef>(
 /// panic occurs, this can result in the skip list containing items from
 /// another list.
 ///
+/// # Mathematical variables
+///
+/// For the purposes of specifying the time complexity of various operations,
+/// *n* refers to the number of items in the list.
+///
 /// [r]: reference
 pub struct SkipList<L, A = Global>
 where
@@ -146,6 +151,11 @@ impl<L: LeafRef> SkipList<L> {
     }
 
     /// Gets the item directly after `item`.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*), but traversing through the entire list with this
+    /// method is only Θ(*n*).
     pub fn next(item: L) -> Option<L> {
         let mut node = match NodeRef::next(&item)? {
             Next::Sibling(node) => return Some(node),
@@ -165,6 +175,11 @@ impl<L: LeafRef> SkipList<L> {
     }
 
     /// Gets the item directly before `item`.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*), but traversing through the entire list with this
+    /// method is only Θ(*n*).
     pub fn previous(item: L) -> Option<L> {
         let mut node = match get_previous(item)? {
             Next::Sibling(node) => return Some(node),
@@ -186,6 +201,10 @@ impl<L: LeafRef> SkipList<L> {
     /// Creates an iterator that starts at `item`.
     ///
     /// The returned iterator will yield `item` as its first element.
+    ///
+    /// # Time complexity
+    ///
+    /// Iteration over the entire list is Θ(*n*).
     pub fn iter_at(item: L) -> Iter<L> {
         Iter(Some(item))
     }
@@ -212,6 +231,10 @@ where
     ///
     /// This is the sum of [`L::size`](LeafRef::size) for every item in the
     /// list.
+    ///
+    /// # Time complexity
+    ///
+    /// Constant.
     pub fn size(&self) -> LeafSize<L> {
         self.root.as_ref().map_or_else(Default::default, |r| r.size())
     }
@@ -222,6 +245,10 @@ where
     /// the first non–zero-sized item at `index`, or the last item in the list
     /// if `index` is [`self.size()`](Self::size) and the list ends with a
     /// zero-sized item.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn get<S>(&self, index: &S) -> Option<L>
     where
         S: Ord + ?Sized,
@@ -246,6 +273,10 @@ where
     ///
     /// This method may panic if `S` and [`LeafSize<L>`] do not form a total
     /// order.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn get_with<S>(&self, index: &S) -> Option<L>
     where
         S: ?Sized,
@@ -269,6 +300,10 @@ where
     /// the first non–zero-sized item at the desired index, or the last item in
     /// the list if the desired index is [`self.size()`](Self::size) and the
     /// list ends with a zero-sized item.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn get_with_cmp<F>(&self, cmp: F) -> Option<L>
     where
         F: Fn(&LeafSize<L>) -> Ordering,
@@ -305,6 +340,10 @@ where
     }
 
     /// Gets the index of `item`.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn index(&self, item: L) -> LeafSize<L> {
         fn add_siblings<N: NodeRef>(
             mut node: N,
@@ -348,6 +387,10 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if `item` is
     /// already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn insert_after(&mut self, pos: L, item: L) {
         self.insert_after_from(pos, once(item));
     }
@@ -358,6 +401,11 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if any items
     /// in `items` are already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(*m* + log *n*), where *m* is the number of items in
+    /// `items`.
     pub fn insert_after_from<I>(&mut self, pos: L, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -380,6 +428,10 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if `item` is
     /// already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn insert_after_opt(&mut self, pos: Option<L>, item: L) {
         self.insert_after_opt_from(pos, once(item));
     }
@@ -391,6 +443,11 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if any items
     /// in `items` are already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(*m* + log *n*), where *m* is the number of items in
+    /// `items`.
     pub fn insert_after_opt_from<I>(&mut self, pos: Option<L>, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -408,6 +465,10 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if `item` is
     /// already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn insert_before(&mut self, pos: L, item: L) {
         self.insert_before_from(pos, once(item));
     }
@@ -418,6 +479,11 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if any items
     /// in `items` are already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(*m* + log *n*), where *m* is the number of items in
+    /// `items`.
     pub fn insert_before_from<I>(&mut self, pos: L, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -432,6 +498,10 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if `item` is
     /// already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn insert_before_opt(&mut self, pos: Option<L>, item: L) {
         self.insert_before_opt_from(pos, once(item));
     }
@@ -443,6 +513,11 @@ where
     ///
     /// This method may panic if `pos` is not from this list, or if any items
     /// in `items` are already in a list. Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(*m* + log *n*), where *m* is the number of items in
+    /// `items`.
     pub fn insert_before_opt_from<I>(&mut self, pos: Option<L>, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -460,6 +535,10 @@ where
     ///
     /// This method may panic if `item` is already in a list. Memory may be
     /// leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn push_front(&mut self, item: L) {
         self.push_front_from(once(item));
     }
@@ -470,6 +549,10 @@ where
     ///
     /// This method may panic if any items in `items` are already in a list.
     /// Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(*m* + log *n*), where *m* is the number of items in `items`.
     pub fn push_front_from<I>(&mut self, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -519,6 +602,10 @@ where
     ///
     /// This method may panic if `item` is already in a list. Memory may be
     /// leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn push_back(&mut self, item: L) {
         self.push_back_from(once(item));
     }
@@ -529,6 +616,10 @@ where
     ///
     /// This method may panic if any items in `items` are already in a list.
     /// Memory may be leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(*m* + log *n*), where *m* is the number of items in `items`.
     pub fn push_back_from<I>(&mut self, items: I)
     where
         I: IntoIterator<Item = L>,
@@ -542,6 +633,10 @@ where
     ///
     /// This method may panic if `item` is not from this list. Memory may be
     /// leaked in this case.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn remove(&mut self, item: L) {
         let root = self.root.as_ref().expect("`item` is not from this list");
         let mut result = remove(item);
@@ -577,6 +672,10 @@ where
     /// # Panics
     ///
     /// This function may panic if `item` is not from this list.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn update<F>(&mut self, item: L, update: F)
     where
         F: FnOnce(),
@@ -596,6 +695,10 @@ where
     ///
     /// This method may panic if `old` is not from this list, or if `new` is
     /// already in a list.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn replace(&mut self, old: L, new: L) {
         assert!(new.next().is_none(), "new item is already in a list");
         let old_size = old.size();
@@ -632,6 +735,10 @@ where
     }
 
     /// Gets the first item in the list.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn first(&self) -> Option<L> {
         let mut node = self.root.clone()?;
         loop {
@@ -643,6 +750,10 @@ where
     }
 
     /// Gets the last item in the list.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
     pub fn last(&self) -> Option<L> {
         let mut node = self.root.clone()?;
         loop {
@@ -654,6 +765,10 @@ where
     }
 
     /// Gets an iterator over the items in the list.
+    ///
+    /// # Time complexity
+    ///
+    /// Iteration over the entire list is Θ(*n*).
     pub fn iter(&self) -> Iter<L> {
         Iter(self.first())
     }
@@ -666,6 +781,10 @@ where
     L::Options: ListOptions<StoreKeys = Bool<true>>,
 {
     /// Inserts an item in a sorted list.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn insert(&mut self, item: L) -> Result<(), L>
     where
         L: Ord,
@@ -681,6 +800,10 @@ where
     }
 
     /// Finds an item in a sorted list.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn find<K>(&self, key: &K) -> Result<L, Option<L>>
     where
         K: Ord + ?Sized,
@@ -699,6 +822,10 @@ where
     /// # Panics
     ///
     /// This method may panic if `K` and `L` do not form a total order.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn find_with<K>(&self, key: &K) -> Result<L, Option<L>>
     where
         K: ?Sized,
@@ -717,6 +844,10 @@ where
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
     pub fn find_with_cmp<F>(&self, cmp: F) -> Result<L, Option<L>>
     where
         F: Fn(&L) -> Ordering,

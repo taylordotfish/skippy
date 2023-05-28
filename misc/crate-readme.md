@@ -1,7 +1,7 @@
 Skippy
 ======
 
-A highly flexible, non-amortized worst-case O(log n) intrusive skip list.
+A highly flexible, non-amortized worst-case O(log *n*) intrusive skip list.
 
 The skip list can be used both as an ordered sequence (allowing it to be
 used like a set or map) and as an unordered sequence (allowing it to be

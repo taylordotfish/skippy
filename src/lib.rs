@@ -21,7 +21,7 @@
 #![cfg_attr(has_allocator_api, feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-//! A highly flexible, non-amortized worst-case O(log n) intrusive skip list.
+//! A highly flexible, non-amortized worst-case O(log *n*) intrusive skip list.
 //!
 //! The skip list can be used both as an ordered sequence (allowing it to be
 //! used as a set or map) and as an unordered sequence (allowing it to be used
