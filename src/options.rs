@@ -26,14 +26,11 @@ use core::convert::Infallible;
 use core::fmt;
 use core::marker::PhantomData;
 use core::ops::{AddAssign, SubAssign};
-
-/// Represents a [`bool`].
-pub struct Bool<const B: bool>(());
-
-/// Represents a [`usize`].
-pub struct Usize<const N: usize>(());
+use integral_constant::{Bool, Usize};
 
 mod detail {
+    use integral_constant::Constant;
+
     pub trait StoreKeysPriv {
         type Key<T: Clone>: Clone;
 
@@ -42,9 +39,7 @@ mod detail {
         }
     }
 
-    pub trait FanoutPriv {
-        const VALUE: usize;
-    }
+    pub trait FanoutPriv: Constant<usize> {}
 }
 
 pub(crate) use detail::*;
@@ -70,9 +65,7 @@ impl StoreKeysPriv for Bool<true> {
 pub trait Fanout: FanoutPriv {}
 
 impl<const N: usize> Fanout for Usize<N> {}
-impl<const N: usize> FanoutPriv for Usize<N> {
-    const VALUE: usize = N;
-}
+impl<const N: usize> FanoutPriv for Usize<N> {}
 
 /// A no-op, zero-sized size type for lists whose items don't need a notion of
 /// size.

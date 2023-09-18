@@ -18,6 +18,7 @@ std = []
 
 [dependencies]
 cell-ref = "0.1"
+integral_constant = "0.1"
 tagged-pointer = "0.2.4"
 
 [dependencies.allocator-fallback]

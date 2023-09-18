@@ -21,10 +21,10 @@
 
 #[cfg(doc)]
 use super::BasicLeaf;
-pub use crate::options::{Bool, NoSize, Usize};
-use crate::options::{Fanout, StoreKeys};
+use crate::options::{Fanout, NoSize, StoreKeys};
 use core::marker::PhantomData;
 use core::ops::{AddAssign, SubAssign};
+use integral_constant::{Bool, Usize};
 
 mod sealed {
     pub trait Sealed {}

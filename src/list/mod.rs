@@ -18,7 +18,7 @@
  */
 
 use crate::allocator::{Allocator, Global};
-use crate::options::{Bool, LeafSize, ListOptions};
+use crate::options::{LeafSize, ListOptions};
 use cell_ref::CellExt;
 use core::borrow::Borrow;
 use core::cmp::Ordering;
@@ -26,6 +26,7 @@ use core::convert::TryFrom;
 use core::iter::once;
 use core::marker::PhantomData;
 use core::mem;
+use integral_constant::{Bool, Constant};
 
 #[cfg(skippy_debug)]
 pub mod debug;
@@ -54,7 +55,6 @@ fn min_node_length<L: LeafRef>() -> usize {
 }
 
 fn max_node_length<L: LeafRef>() -> usize {
-    use crate::options::FanoutPriv;
     <L::Options as ListOptions>::Fanout::VALUE.max(3)
 }
 
