@@ -19,9 +19,9 @@
 
 use super::min_node_length;
 use super::node::{InternalNodeRef, Next, NodeRef};
+use crate::PersistentAlloc;
 use crate::allocator::Allocator;
 use crate::options::LeafSize;
-use crate::PersistentAlloc;
 use core::iter::FusedIterator;
 
 pub struct Split<N: NodeRef> {

@@ -116,7 +116,7 @@ pub enum LeafNext<L: LeafRef> {
 /// [r]: reference
 pub struct This<T>(T);
 
-impl<'a, T> Deref for This<&'a T> {
+impl<T> Deref for This<&'_ T> {
     type Target = T;
 
     fn deref(&self) -> &T {

@@ -17,8 +17,8 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use super::SkipList;
+use super::node::{Down, InternalNodeRef, LeafRef, Next, NodeRef};
 use crate::allocator::Allocator;
 use crate::options::LeafSize;
 use alloc::collections::BTreeMap;

@@ -17,8 +17,8 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::options::BasicOptions;
 use super::BasicLeaf;
+use super::options::BasicOptions;
 use crate::options::{LeafSize, TypedOptions};
 use crate::{LeafNext, LeafRef, This};
 use core::cell::Cell;

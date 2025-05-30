@@ -17,8 +17,8 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::basic::{self, BasicLeaf, RefLeaf};
 use crate::SkipList;
+use crate::basic::{self, BasicLeaf, RefLeaf};
 use alloc::vec::Vec;
 use core::cell::Cell;
 use core::cmp::Ordering;

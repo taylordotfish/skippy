@@ -25,7 +25,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "std")]
 thread_local! {
-    static CAN_SAFELY_DESTROY: Cell<bool> = Cell::new(true);
+    static CAN_SAFELY_DESTROY: Cell<bool> = const { Cell::new(true) };
 }
 
 #[cfg(not(feature = "std"))]

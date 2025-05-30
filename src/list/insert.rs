@@ -22,9 +22,9 @@ use super::node::{Down, InternalNodeRef, Next, NodeRef};
 use super::node::{LeafExt, LeafNext, LeafRef};
 use super::split::split;
 use super::traverse::get_parent;
+use crate::PersistentAlloc;
 use crate::allocator::Allocator;
 use crate::options::LeafSize;
-use crate::PersistentAlloc;
 use cell_ref::CellExt;
 
 struct Insertion<N: NodeRef> {

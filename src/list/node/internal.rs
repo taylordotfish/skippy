@@ -19,10 +19,10 @@
 
 use super::leaf::Key;
 use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
+use crate::PersistentAlloc;
 use crate::allocator::Allocator;
 use crate::options::{LeafSize, ListOptions};
-use crate::PersistentAlloc;
-use alloc::alloc::{handle_alloc_error, Layout};
+use alloc::alloc::{Layout, handle_alloc_error};
 use cell_ref::{Cell, CellExt};
 use core::cmp::Ordering;
 use core::marker::{PhantomData, Unpin};
@@ -88,7 +88,7 @@ impl<L: LeafRef> Default for InternalNode<L> {
 impl<L: LeafRef> InternalNode<L> {
     fn sentinel() -> NonNull<Self> {
         #[repr(align(4))]
-        struct Align4(u32);
+        struct Align4(#[allow(dead_code)] u32);
 
         static SENTINEL: Align4 = Align4(0);
         NonNull::from(&SENTINEL).cast()
