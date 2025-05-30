@@ -18,8 +18,10 @@
 .PHONY: all
 all: ../README.md package-readme.md
 
-../README.md: README.m4 ../Cargo.toml
+SOURCES = README.m4 ../Cargo.toml ../src/common-readme.md
+
+../README.md: $(SOURCES)
 	m4 $< > $@
 
-package-readme.md: README.m4 ../Cargo.toml
+package-readme.md: $(SOURCES)
 	m4 -DRUST $< > $@
