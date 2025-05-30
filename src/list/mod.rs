@@ -1,5 +1,5 @@
 /*
- * Copyright (C) [unpublished] taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of Skippy.
  *
@@ -104,9 +104,9 @@ fn propagate_update_diff<N: NodeRef>(
 ///
 /// # Concurrency
 ///
-/// This type is neither [`Send`] nor [`Sync`], and `L` should not implement
-/// either of those traits either. However, if you're using a [`SkipList`] and
-/// items of type `L` internally within another type, and you can guarantee
+/// This type is neither [`Send`] nor [`Sync`], and `L` should also not
+/// implement either of those traits. However, if you're using a [`SkipList`]
+/// and items of type `L` internally within another type, and you can guarantee
 /// that, under certain conditions, no other thread could possibly use that
 /// particular skip list or its items, it may be safe to send that skip list
 /// and all of its items to another thread (but this must be internal---users
@@ -154,8 +154,17 @@ impl<L: LeafRef> SkipList<L> {
     ///
     /// # Time complexity
     ///
-    /// Worst-case Θ(log *n*), but traversing through the entire list with this
-    /// method is only Θ(*n*).
+    /// Worst-case Θ(log *n*), but a traversal through the entire list by
+    /// repeatedly calling this method is only Θ(*n*).
+    ///
+    /// # Note
+    ///
+    /// This function is defined only on `SkipList<L>` rather than all
+    /// `SkipList<L, A>`, but it can be used with items from any skip list,
+    /// including those with custom allocators. Defining the function this way
+    /// ensures that `SkipList::next(some_item)` isn't ambiguous. (This applies
+    /// to [`previous`](Self::previous) and [`iter_at`](Self::iter_at) as
+    /// well.)
     pub fn next(item: L) -> Option<L> {
         let mut node = match NodeRef::next(&item)? {
             Next::Sibling(node) => return Some(node),
@@ -178,8 +187,8 @@ impl<L: LeafRef> SkipList<L> {
     ///
     /// # Time complexity
     ///
-    /// Worst-case Θ(log *n*), but traversing through the entire list with this
-    /// method is only Θ(*n*).
+    /// Worst-case Θ(log *n*), but a traversal through the entire list by
+    /// repeatedly calling this method is only Θ(*n*).
     pub fn previous(item: L) -> Option<L> {
         let mut node = match get_previous(item)? {
             Next::Sibling(node) => return Some(node),

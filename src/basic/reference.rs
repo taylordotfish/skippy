@@ -1,5 +1,5 @@
 /*
- * Copyright (C) [unpublished] taylor.fish <contact@taylor.fish>
+ * Copyright (C) 2025 taylor.fish <contact@taylor.fish>
  *
  * This file is part of Skippy.
  *
@@ -31,6 +31,9 @@ use tagged_pointer::TaggedPtr;
 /// Stores data of type `T`. <code>[&][r][RefLeaf]\<T></code> implements
 /// [`LeafRef`] and can be used with [`SkipList`](crate::SkipList).
 ///
+/// This type has a lifetime parameter because it can hold references to other
+/// [`RefLeaf`] objects.
+///
 /// [r]: reference
 #[repr(align(2))]
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -40,8 +43,8 @@ pub struct RefLeaf<'a, T> {
     phantom: PhantomData<Cell<&'a Self>>,
 }
 
-impl<'a, T> RefLeaf<'a, T> {
-    /// Creates a new [`RefLeaf<'a, T>`].
+impl<T> RefLeaf<'_, T> {
+    /// Creates a new [`RefLeaf<'_, T>`](RefLeaf).
     pub fn new(data: T) -> Self {
         Self {
             data,
@@ -56,13 +59,13 @@ impl<'a, T> RefLeaf<'a, T> {
     }
 }
 
-impl<'a, T> From<T> for RefLeaf<'a, T> {
+impl<T> From<T> for RefLeaf<'_, T> {
     fn from(data: T) -> Self {
         Self::new(data)
     }
 }
 
-impl<'a, T> Deref for RefLeaf<'a, T> {
+impl<T> Deref for RefLeaf<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -70,13 +73,13 @@ impl<'a, T> Deref for RefLeaf<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for RefLeaf<'a, T> {
+impl<T> DerefMut for RefLeaf<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         &mut self.data
     }
 }
 
-impl<'a, T: fmt::Debug> fmt::Debug for RefLeaf<'a, T> {
+impl<T: fmt::Debug> fmt::Debug for RefLeaf<'_, T> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("RefLeaf")
             .field("addr", &(self as *const _))
