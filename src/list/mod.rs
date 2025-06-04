@@ -810,6 +810,11 @@ where
 
     /// Finds an item in a sorted list.
     ///
+    /// If the item is not in the list, this method returns an [`Err`] value
+    /// containing the existing list item that would immediately precede the
+    /// desired item if it were to be inserted. This can be used with
+    /// [`Self::insert_after_opt`].
+    ///
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
@@ -827,6 +832,8 @@ where
     /// For this method to yield correct results, `K` and `L` must form a
     /// total order ([`PartialOrd::partial_cmp`] should always return
     /// [`Some`]).
+    ///
+    /// The return value is the same as for [`Self::find`].
     ///
     /// # Panics
     ///
@@ -853,6 +860,8 @@ where
     /// `cmp` checks whether its argument is less than, equal to, or greater
     /// than the desired item. Thus, the argument provided to `cmp` is
     /// logically the *left-hand* side of the comparison.
+    ///
+    /// The return value is the same as for [`Self::find`].
     ///
     /// # Time complexity
     ///

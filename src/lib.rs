@@ -20,6 +20,7 @@
 #![cfg_attr(not(any(feature = "std", all(test, skippy_debug))), no_std)]
 #![cfg_attr(has_allocator_api, feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![warn(clippy::undocumented_unsafe_blocks)]
 // crate doc:
 #![doc = include_str!("common-readme.md")]
 //!

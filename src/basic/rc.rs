@@ -82,6 +82,14 @@ impl<T: fmt::Debug> fmt::Debug for RcLeaf<T> {
     }
 }
 
+// SAFETY:
+// * `Rc` is not `Send` or `Sync`.
+// * `Self::next` will initially return `None` because `RcLeaf::next` is
+//   initialized as `None`.
+// * `Self::set_next` stores its argument in `RcLeaf::next` and is the only
+//   function that modifies that field. `Self::next` retrieves the value
+//   appropriately.
+// * Clones of `Rc` behave like the original pointer.
 unsafe impl<T: BasicLeaf> LeafRef for Rc<RcLeaf<T>> {
     type Options = TypedOptions<
         <T::Options as BasicOptions>::SizeType,

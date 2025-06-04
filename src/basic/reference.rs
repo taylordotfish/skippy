@@ -89,6 +89,15 @@ impl<T: fmt::Debug> fmt::Debug for RefLeaf<'_, T> {
     }
 }
 
+// SAFETY:
+// * `Self` is not `Send` or `Sync` because `RefLeaf` is not `Sync` (due to the
+//   `Cell` member).
+// * `Self::next` will initially return `None` because `RefLeaf::next` is
+//   initialized as `None`.
+// * `Self::set_next` stores its argument in `RefLeaf::next` and is the only
+//   function that modifies that field. `Self::next` retrieves the value
+//   appropriately.
+// * Clones of references behave like the original reference.
 unsafe impl<'a, T: BasicLeaf> LeafRef for &RefLeaf<'a, T> {
     type Options = TypedOptions<
         <T::Options as BasicOptions>::SizeType,
