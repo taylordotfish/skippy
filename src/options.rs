@@ -37,6 +37,10 @@ mod detail {
         fn as_key<T: Clone>(_value: &T) -> Option<Self::Key<T>> {
             None
         }
+
+        fn to_leaf<T: Clone>(_key: Option<Self::Key<T>>) -> Option<T> {
+            None
+        }
     }
 
     pub trait FanoutPriv: Constant<usize> {}
@@ -58,6 +62,10 @@ impl StoreKeysPriv for Bool<true> {
 
     fn as_key<T: Clone>(value: &T) -> Option<T> {
         Some(value.clone())
+    }
+
+    fn to_leaf<T: Clone>(key: Option<T>) -> Option<T> {
+        key
     }
 }
 

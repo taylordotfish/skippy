@@ -53,6 +53,7 @@ pub trait LeafDebug: LeafRef {
 pub struct State<L: LeafDebug> {
     internal_map: IdMap<usize>,
     leaf_map: IdMap<L::Id>,
+    has_size: bool,
 }
 
 impl<L: LeafDebug> State<L> {
@@ -60,6 +61,7 @@ impl<L: LeafDebug> State<L> {
         Self {
             internal_map: IdMap::new(),
             leaf_map: IdMap::new(),
+            has_size: false,
         }
     }
 
@@ -88,6 +90,14 @@ where
         &'a self,
         state: &'a mut State<L>,
     ) -> ListDebug<'a, L, A> {
+        if !state.has_size {
+            state.has_size = self.size() != LeafSize::<L>::default();
+        }
+        if self.root.as_ref().and_then(|r| r.key()).is_some() {
+            for leaf in self {
+                state.leaf_id(&leaf);
+            }
+        }
         ListDebug {
             state: RefCell::new(state),
             list: self,
@@ -148,12 +158,14 @@ where
     writeln!(f, "{I1}{{\n{I2}rank=same")?;
     loop {
         let id = state.internal_id(n);
-        writeln!(
-            f,
-            "{I2}i{id} [label=\"i{id}\\nL: {}\\nS: {:?}\" shape=rectangle]",
-            n.len.get(),
-            n.size(),
-        )?;
+        write!(f, "{I2}i{id} [label=\"i{id}\\nLen: {}", n.len.get())?;
+        if state.has_size {
+            write!(f, "\\nSize: {:?}", n.size())?;
+        }
+        if let Some(key) = n.key_as_leaf() {
+            write!(f, "\\nKey: L{}", state.leaf_id(&key))?;
+        }
+        writeln!(f, "\" shape=rectangle]")?;
         if let Some(next) = n.next_sibling() {
             n = next;
         } else {

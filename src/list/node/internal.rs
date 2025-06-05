@@ -17,8 +17,7 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use super::leaf::Key;
-use super::{Down, LeafRef, Next, NextKind, NodeKind, NodeRef};
+use super::{Down, Key, LeafRef, Next, NextKind, NodeKind, NodeRef};
 use crate::PersistentAlloc;
 use crate::allocator::Allocator;
 use crate::options::{LeafSize, ListOptions};
@@ -258,6 +257,11 @@ impl<L: LeafRef> InternalNodeRef<L> {
 
     pub fn as_ptr(self) -> NonNull<AllocItem<L>> {
         NonNull::<InternalNode<L>>::from(&*self).cast()
+    }
+
+    pub fn key_as_leaf(self) -> Option<L> {
+        use crate::options::StoreKeysPriv;
+        super::StoreKeys::<L>::to_leaf(self.key())
     }
 }
 

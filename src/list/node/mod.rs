@@ -17,13 +17,16 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::options::LeafSize;
+use crate::options::{LeafSize, ListOptions, StoreKeysPriv};
 
 pub mod internal;
 pub mod leaf;
 
 pub use internal::{AllocItem, InternalNodeRef};
-pub use leaf::{Key, LeafExt, LeafNext, LeafRef, SizeExt, This};
+pub use leaf::{LeafExt, LeafNext, LeafRef, SizeExt, This};
+
+type StoreKeys<L> = <<L as LeafRef>::Options as ListOptions>::StoreKeys;
+pub type Key<L> = <StoreKeys<L> as StoreKeysPriv>::Key<L>;
 
 pub trait NodeRef: Clone {
     type Leaf: LeafRef;
