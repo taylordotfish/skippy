@@ -17,7 +17,7 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-#![cfg_attr(not(any(feature = "std", all(test, skippy_debug))), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(has_allocator_api, feature(allocator_api))]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::undocumented_unsafe_blocks)]
@@ -42,8 +42,6 @@ pub mod basic;
 mod list;
 pub mod options;
 mod persistent_alloc;
-#[cfg(test)]
-mod tests;
 
 #[cfg(skippy_debug)]
 pub use list::debug;

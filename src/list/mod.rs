@@ -1094,7 +1094,6 @@ where
             let mut prev_internal: Option<InternalNodeRef<L>> = None;
             node = match node {
                 Down::Leaf(mut node) => loop {
-                    println!("{:?}", cmp(&node));
                     match cmp(&node) {
                         Ordering::Less => {}
                         Ordering::Equal => return Ok(node),

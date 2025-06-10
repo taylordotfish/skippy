@@ -17,12 +17,11 @@
  * along with Skippy. If not, see <https://www.gnu.org/licenses/>.
  */
 
-use crate::SkipList;
-use crate::basic::{self, BasicLeaf, RefLeaf};
-use alloc::vec::Vec;
-use core::cell::Cell;
-use core::cmp::Ordering;
-use core::fmt;
+use skippy::SkipList;
+use skippy::basic::{self, BasicLeaf, RefLeaf};
+use std::cell::Cell;
+use std::cmp::Ordering;
+use std::fmt;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct Data {
@@ -277,7 +276,7 @@ fn zero_sized() {
 
 #[test]
 fn one_item() {
-    use core::ptr::addr_eq;
+    use std::ptr::addr_eq;
     let item = Leaf::new(Data::new(123, 1));
     let mut list = SkipList::new();
     list.push_front(&item);
@@ -305,11 +304,11 @@ fn large_items() {
 #[allow(dead_code)]
 fn make_graph<L>(
     list: &SkipList<L>,
-    state: &mut crate::debug::State<L>,
+    state: &mut skippy::debug::State<L>,
 ) -> std::io::Result<()>
 where
-    L: crate::debug::LeafDebug,
-    crate::options::LeafSize<L>: fmt::Debug,
+    L: skippy::debug::LeafDebug,
+    skippy::options::LeafSize<L>: fmt::Debug,
 {
     use std::fs::File;
     use std::io::Write;
