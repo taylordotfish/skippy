@@ -47,7 +47,9 @@ impl<L: LeafRef> Default for DownUnion<L> {
 /// A type equal in size and alignment to the blocks of memory that
 /// [`SkipList`](crate::SkipList) allocates internally.
 ///
-/// This may be useful when using custom allocators.
+/// This may be useful when using custom allocators. The alignment of this
+/// type is guaranteed to be at least as large as the alignment of
+/// <code>L::[Options](LeafRef::Options)::[Align](ListOptions::Align)</code>.
 #[repr(transparent)]
 pub struct AllocItem<L: LeafRef>(MaybeUninit<InternalNode<L>>);
 

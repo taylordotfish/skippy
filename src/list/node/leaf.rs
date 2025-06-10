@@ -90,17 +90,19 @@ pub unsafe trait LeafRef: Clone {
 /// This can be stored directly by the type that implements [`LeafRef`], but
 /// it also makes certain details available to enable more efficient
 /// representations.
-///
-/// The pointer in [`Self::Data`] is guaranteed to be aligned to at least the
-/// alignment of <code>[L::Options]::[Align]</code>.
-///
-/// [L::Options]: LeafRef::Options
-/// [Align]: ListOptions::Align
 #[derive(Clone, Debug)]
 pub enum LeafNext<L: LeafRef> {
     /// A leaf item.
     Leaf(L),
+
     /// Arbitrary data that should be stored.
+    ///
+    /// The pointer is guaranteed to be properly aligned, which in the case of
+    /// [`AllocItem<L>`] means its alignment is at least as large as the
+    /// alignment of <code>L::[Options]::[Align]</code>.
+    ///
+    /// [Options]: LeafRef::Options
+    /// [Align]: ListOptions::Align
     Data(NonNull<AllocItem<L>>),
 }
 

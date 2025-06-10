@@ -188,7 +188,8 @@ impl<L: LeafRef> SkipList<L> {
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*), but a traversal through the entire list by
-    /// repeatedly calling this method is only Θ(*n*).
+    /// repeatedly calling this method is only Θ(*n*). In practice, this
+    /// method is slower than [`Self::next`] by a constant factor.
     pub fn previous(item: L) -> Option<L> {
         let mut node = match get_previous(item)? {
             Next::Sibling(node) => return Some(node),
@@ -246,6 +247,55 @@ where
     /// Constant.
     pub fn size(&self) -> LeafSize<L> {
         self.root.as_ref().map_or_else(Default::default, |r| r.size())
+    }
+
+    fn subtree_get<F>(
+        &self,
+        cmp: F,
+        first_child: Down<L>,
+        offset: LeafSize<L>,
+    ) -> Option<L>
+    where
+        F: Fn(&LeafSize<L>) -> Ordering,
+    {
+        let mut node = first_child;
+        let mut size = offset;
+        loop {
+            node = match node {
+                Down::Leaf(mut node) => loop {
+                    let new_size = size.clone().add(node.size());
+                    let ord = cmp(&new_size);
+                    if ord.is_le() {
+                        if let Some(next) = node.next_sibling() {
+                            node = next;
+                            size = new_size;
+                            continue;
+                        }
+                        if !(ord.is_eq() && size == new_size) {
+                            return None;
+                        }
+                        // Item is the last element of the list, has a size of
+                        // zero, and is at the right index.
+                    }
+                    return Some(node);
+                },
+                Down::Internal(mut node) => loop {
+                    let new_size = size.clone().add(node.size());
+                    let ord = cmp(&new_size);
+                    if ord.is_le() {
+                        if let Some(next) = node.next_sibling() {
+                            node = next;
+                            size = new_size;
+                            continue;
+                        }
+                        if !ord.is_eq() {
+                            return None;
+                        }
+                    }
+                    break node.down().unwrap();
+                },
+            }
+        }
     }
 
     /// Gets an item by index.
@@ -310,6 +360,11 @@ where
     /// the list if the desired index is [`self.size()`](Self::size) and the
     /// list ends with a zero-sized item.
     ///
+    /// # Panics
+    ///
+    /// This method may panic if `cmp` returns results inconsistent with the
+    /// total order on [`LeafSize<L>`].
+    ///
     /// # Time complexity
     ///
     /// Θ(log *n*).
@@ -317,34 +372,157 @@ where
     where
         F: Fn(&LeafSize<L>) -> Ordering,
     {
-        match cmp(&self.size()) {
-            Ordering::Less => return None,
-            Ordering::Equal => {
-                return self.last().filter(|n| n.size() == Default::default());
-            }
-            Ordering::Greater => {}
-        }
+        self.subtree_get(cmp, self.root.clone()?, Default::default())
+    }
 
-        let mut node = self.root.clone()?;
+    /// Gets an item by index, relative to the index of another item.
+    ///
+    /// This method returns the item whose index is `offset` greater than the
+    /// index of `start`. As with [`Self::get`], this method will not return
+    /// items with a size of 0 unless the desired index (`offset` plus
+    /// <code>self.[index]\(start)</code>) is equal to the [size] of the list,
+    /// in which case the last item of the list will be returned if it has a
+    /// size of zero.
+    ///
+    /// [index]: Self::index
+    /// [size]: Self::size
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
+    pub fn get_after<S>(&self, start: L, offset: &S) -> Option<L>
+    where
+        S: Ord + ?Sized,
+        LeafSize<L>: Borrow<S>,
+    {
+        self.get_after_with_cmp(start, |size| size.borrow().cmp(offset))
+    }
+
+    /// Gets an item by index, relative to the index of another item, using
+    /// a size type that [`LeafSize<L>`] can't be borrowed as.
+    ///
+    /// This method is to [`Self::get_after`] what [`Self::get_with`] is to
+    /// [`Self::get`].
+    ///
+    /// For this method to yield correct results, `S` and [`LeafSize<L>`] must
+    /// form a total order ([`PartialOrd::partial_cmp`] should always return
+    /// [`Some`]).
+    ///
+    /// This method returns the item whose index is `offset` greater than the
+    /// index of `start`. As with [`Self::get`], this method will not return
+    /// items with a size of 0 unless the desired index (`offset` plus
+    /// <code>self.[index]\(start)</code>) is equal to the [size] of the list,
+    /// in which case the last item of the list will be returned if it has a
+    /// size of zero.
+    ///
+    /// [index]: Self::index
+    /// [size]: Self::size
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `S` and [`LeafSize<L>`] do not form a total
+    /// order.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
+    pub fn get_after_with<S>(&self, start: L, offset: &S) -> Option<L>
+    where
+        S: ?Sized,
+        LeafSize<L>: PartialOrd<S>,
+    {
+        self.get_after_with_cmp(start, |size| {
+            size.partial_cmp(offset).unwrap_or_else(
+                #[cold]
+                || panic!("`partial_cmp` returned `None`"),
+            )
+        })
+    }
+
+    /// Gets an item by index, relative to the index of another item, using the
+    /// given comparison function.
+    ///
+    /// This method is to [`Self::get_after`] what [`Self::get_with_cmp`] is to
+    /// [`Self::get`].
+    ///
+    /// `cmp` checks whether its argument is less than, equal to, or greater
+    /// than the desired index. Thus, the argument provided to `cmp` is
+    /// logically the *left-hand* side of the comparison.
+    ///
+    /// Given `offset` as the [`LeafSize<L>`] for which `cmp(offset)` returns
+    /// [`Ordering::Equal`], this method returns the item whose index is
+    /// `offset` greater than the index of `start`. As with [`Self::get`], this
+    /// method will not return items with a size of 0 unless the desired index
+    /// (`offset` plus <code>self.[index]\(start)</code>) is equal to the
+    /// [size] of the list, in which case the last item of the list will be
+    /// returned if it has a size of zero.
+    ///
+    /// [index]: Self::index
+    /// [size]: Self::size
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if `cmp` returns results inconsistent with the
+    /// total order on [`LeafSize<L>`].
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
+    pub fn get_after_with_cmp<F>(&self, start: L, cmp: F) -> Option<L>
+    where
+        F: Fn(&LeafSize<L>) -> Ordering,
+    {
+        let mut leaf = start;
         let mut size = LeafSize::<L>::default();
-        loop {
-            node = match node {
-                Down::Leaf(mut node) => loop {
-                    size += node.size();
-                    if cmp(&size).is_gt() {
-                        return Some(node);
+        let mut ord;
+        let mut internal = loop {
+            let old_size = size.clone();
+            size += leaf.size();
+            ord = cmp(&size);
+            if ord.is_le() {
+                match NodeRef::next(&leaf) {
+                    Some(Next::Sibling(next)) => {
+                        leaf = next;
+                        continue;
                     }
-                    node = node.next_sibling().unwrap();
-                },
-                Down::Internal(mut node) => loop {
-                    let new_size = size.clone().add(node.size());
-                    if cmp(&new_size).is_gt() {
-                        break node.down().unwrap();
-                    }
-                    size = new_size;
-                    node = node.next_sibling().unwrap();
-                },
+                    Some(Next::Parent(node)) => break node,
+                    // If this match arm is taken: the item is the last element
+                    // of the list, has a size of zero, and is at the right
+                    // index.
+                    None if ord.is_eq() && old_size == size => {}
+                    None => return None,
+                }
             }
+            return Some(leaf);
+        };
+
+        let mut leaf_is_last = true;
+        loop {
+            match internal.next() {
+                Some(Next::Sibling(next)) => {
+                    internal = next;
+                    leaf_is_last = false;
+                }
+                Some(Next::Parent(node)) => {
+                    internal = node;
+                    continue;
+                }
+                None if ord.is_eq() => {
+                    let last = if leaf_is_last {
+                        Some(leaf)
+                    } else {
+                        self.last()
+                    };
+                    return last.filter(|n| n.size() == Default::default());
+                }
+                None => return None,
+            }
+            let new_size = size.clone().add(internal.size());
+            ord = cmp(&new_size);
+            if ord.is_gt() {
+                return self.subtree_get(cmp, internal.down().unwrap(), size);
+            }
+            size = new_size;
         }
     }
 
@@ -663,13 +841,7 @@ where
         }
         self.root = result.new_root;
     }
-}
 
-impl<L, A> SkipList<L, A>
-where
-    L: LeafRef,
-    A: Allocator,
-{
     /// Updates the [`size`] of an item.
     ///
     /// This method should be used whenever `item` needs to be modified in a
@@ -791,6 +963,10 @@ where
 {
     /// Inserts an item in a sorted list.
     ///
+    /// # Panics
+    ///
+    /// This method may panic if the list is not sorted.
+    ///
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
@@ -808,12 +984,77 @@ where
         Ok(())
     }
 
+    fn subtree_find<F>(
+        &self,
+        cmp: F,
+        first_child: Down<L>,
+    ) -> Result<L, Option<L>>
+    where
+        F: Fn(&L) -> Ordering,
+    {
+        let mut node = first_child;
+        #[cfg(debug_assertions)]
+        let mut first = true;
+        loop {
+            // These variables are only used in their respective loops, but
+            // defining them outside of the `match` reduces indentation.
+            let mut prev_leaf: Option<L> = None;
+            let mut prev_internal: Option<InternalNodeRef<L>> = None;
+            node = match node {
+                Down::Leaf(mut node) => loop {
+                    println!("{:?}", cmp(&node));
+                    match cmp(&node) {
+                        Ordering::Less => {}
+                        Ordering::Equal => return Ok(node),
+                        Ordering::Greater => {
+                            #[cfg(debug_assertions)]
+                            debug_assert!(first || prev_leaf.is_some());
+                            return Err(prev_leaf);
+                        }
+                    }
+                    if let Some(next) = node.next_sibling() {
+                        prev_leaf = Some(node);
+                        node = next;
+                    } else {
+                        return Err(Some(node));
+                    }
+                },
+                Down::Internal(mut node) => loop {
+                    let key = node.key().unwrap();
+                    match cmp(&key) {
+                        Ordering::Less => {}
+                        Ordering::Equal => return Ok(key),
+                        Ordering::Greater => {
+                            #[cfg(debug_assertions)]
+                            debug_assert!(first || prev_internal.is_some());
+                            break prev_internal.ok_or(None)?.down().unwrap();
+                        }
+                    }
+                    if let Some(next) = node.next_sibling() {
+                        prev_internal = Some(node);
+                        node = next;
+                    } else {
+                        break node.down().unwrap();
+                    }
+                },
+            };
+            #[cfg(debug_assertions)]
+            {
+                first = false;
+            }
+        }
+    }
+
     /// Finds an item in a sorted list.
     ///
     /// If the item is not in the list, this method returns an [`Err`] value
     /// containing the existing list item that would immediately precede the
     /// desired item if it were to be inserted. This can be used with
     /// [`Self::insert_after_opt`].
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the list is not sorted.
     ///
     /// # Time complexity
     ///
@@ -837,7 +1078,8 @@ where
     ///
     /// # Panics
     ///
-    /// This method may panic if `K` and `L` do not form a total order.
+    /// This method may panic if the list is not sorted, or if `K` and `L` do
+    /// not form a total order.
     ///
     /// # Time complexity
     ///
@@ -863,6 +1105,11 @@ where
     ///
     /// The return value is the same as for [`Self::find`].
     ///
+    /// # Panics
+    ///
+    /// This method may panic if the list is not sorted, or if `cmp` returns
+    /// results inconsistent with the total order on `L`.
+    ///
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
@@ -870,36 +1117,133 @@ where
     where
         F: Fn(&L) -> Ordering,
     {
-        let mut node = self.root.clone().ok_or(None)?;
-        if cmp(&node.key().unwrap()).is_gt() {
-            return Err(None);
-        }
-        loop {
-            node = match node {
-                Down::Leaf(mut node) => loop {
-                    if cmp(&node).is_eq() {
-                        return Ok(node);
-                    }
-                    debug_assert!(cmp(&node).is_lt());
-                    node = match node.next_sibling() {
-                        None => return Err(Some(node)),
-                        Some(n) if cmp(&n).is_gt() => return Err(Some(node)),
-                        Some(n) => n,
-                    };
-                },
-                Down::Internal(mut node) => loop {
-                    let leaf = node.key().unwrap();
-                    if cmp(&leaf).is_eq() {
-                        return Ok(leaf);
-                    }
-                    debug_assert!(cmp(&leaf).is_lt());
-                    node = match node.next_sibling() {
-                        Some(n) if cmp(&n.key().unwrap()).is_le() => n,
-                        _ => break node.down().unwrap(),
-                    };
-                },
+        self.subtree_find(cmp, self.root.clone().ok_or(None)?)
+    }
+
+    /// Finds an item in a sorted list, at or after a given item.
+    ///
+    /// If the desired item occurs at or after `start`, or is not present in
+    /// the list but would be ordered after `start`, this method returns the
+    /// same result as <code>self.[find]\(key)</code>. Otherwise,
+    /// <code>[Err]\([None])</code> is returned.
+    ///
+    /// [find]: Self::find
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the list is not sorted.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
+    pub fn find_after<K>(&self, start: L, key: &K) -> Result<L, Option<L>>
+    where
+        K: Ord + ?Sized,
+        L: Borrow<K>,
+    {
+        self.find_after_with_cmp(start, |item| item.borrow().cmp(key))
+    }
+
+    /// Finds an item in a sorted list, at or after a given item, with a key
+    /// type that `L` can't be borrowed as.
+    ///
+    /// The return value is the same as for [`Self::find_after`]. This method
+    /// is to [`Self::find_after`] what [`Self::find_with`] is to
+    /// [`Self::find`].
+    ///
+    /// For this method to yield correct results, `K` and `L` must form a
+    /// total order ([`PartialOrd::partial_cmp`] should always return
+    /// [`Some`]).
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the list is not sorted, or if `K` and `L` do
+    /// not form a total order.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
+    pub fn find_after_with<K>(&self, start: L, key: &K) -> Result<L, Option<L>>
+    where
+        K: ?Sized,
+        L: PartialOrd<K>,
+    {
+        self.find_after_with_cmp(start, |item| {
+            item.partial_cmp(key).unwrap_or_else(
+                #[cold]
+                || panic!("`partial_cmp` returned `None`"),
+            )
+        })
+    }
+
+    /// Finds an item in a sorted list, at or after a given item, using the
+    /// given comparison function.
+    ///
+    /// The return value is the same as for [`Self::find_after`]. This method
+    /// is to [`Self::find_after`] what [`Self::find_with_cmp`] is to
+    /// [`Self::find`].
+    ///
+    /// `cmp` checks whether its argument is less than, equal to, or greater
+    /// than the desired item. Thus, the argument provided to `cmp` is
+    /// logically the *left-hand* side of the comparison.
+    ///
+    /// # Panics
+    ///
+    /// This method may panic if the list is not sorted, or if `cmp` returns
+    /// results inconsistent with the total order on `L`.
+    ///
+    /// # Time complexity
+    ///
+    /// Worst-case Θ(log *n*).
+    pub fn find_after_with_cmp<F>(
+        &self,
+        start: L,
+        cmp: F,
+    ) -> Result<L, Option<L>>
+    where
+        F: Fn(&L) -> Ordering,
+    {
+        let mut leaf = start;
+        let mut prev = None;
+        let mut internal = loop {
+            match cmp(&leaf) {
+                Ordering::Less => {}
+                Ordering::Equal => return Ok(leaf),
+                Ordering::Greater => return Err(prev),
             }
-        }
+            match NodeRef::next(&leaf) {
+                Some(Next::Sibling(next)) => {
+                    prev = Some(leaf);
+                    leaf = next;
+                }
+                Some(Next::Parent(node)) => break node,
+                None => return Err(Some(leaf)),
+            }
+        };
+
+        let mut leaf_is_last = true;
+        let down = loop {
+            match internal.next() {
+                Some(Next::Sibling(next)) => {
+                    let key = next.key().unwrap();
+                    let ord = cmp(&key);
+                    match ord {
+                        Ordering::Less => {}
+                        Ordering::Equal => return Ok(key),
+                        Ordering::Greater => break internal.down().unwrap(),
+                    }
+                    internal = next;
+                    leaf_is_last = false;
+                }
+                Some(Next::Parent(node)) => {
+                    internal = node;
+                    continue;
+                }
+                None if leaf_is_last => return Err(Some(leaf)),
+                None => break internal.down().unwrap(),
+            }
+        };
+        self.subtree_find(cmp, down)
     }
 }
 
