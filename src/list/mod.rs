@@ -100,7 +100,7 @@ fn propagate_update_diff<N: NodeRef>(
 }
 
 /// A flexible intrusive skip list with worst-case non-amortized O(log *n*)
-/// insertions and removals.
+/// operations.
 ///
 /// # Concurrency
 ///
@@ -163,8 +163,7 @@ impl<L: LeafRef> SkipList<L> {
     /// `SkipList<L, A>`, but it can be used with items from any skip list,
     /// including those with custom allocators. Defining the function this way
     /// ensures that `SkipList::next(some_item)` isn't ambiguous. (This applies
-    /// to [`previous`](Self::previous) and [`iter_at`](Self::iter_at) as
-    /// well.)
+    /// to all non-method functions of `SkipList<L>`.)
     pub fn next(item: L) -> Option<L> {
         let mut node = match NodeRef::next(&item)? {
             Next::Sibling(node) => return Some(node),
@@ -210,13 +209,34 @@ impl<L: LeafRef> SkipList<L> {
 
     /// Creates an iterator that starts at `item`.
     ///
-    /// The returned iterator will yield `item` as its first element.
+    /// The returned iterator will yield `item` as its first element. See also
+    /// [`Self::iter`].
     ///
     /// # Time complexity
     ///
     /// Iteration over the entire list is Θ(*n*).
     pub fn iter_at(item: L) -> Iter<L> {
         Iter(Some(item))
+    }
+
+    fn subtree_first(first_child: Down<L>) -> L {
+        let mut node = first_child;
+        loop {
+            node = match node {
+                Down::Leaf(node) => return node,
+                Down::Internal(node) => node.down().unwrap(),
+            }
+        }
+    }
+
+    fn subtree_last(first_child: Down<L>) -> L {
+        let mut node = first_child;
+        loop {
+            node = match node {
+                Down::Leaf(node) => return get_last_sibling(node),
+                Down::Internal(node) => get_last_sibling(node).down().unwrap(),
+            }
+        }
     }
 }
 
@@ -247,55 +267,6 @@ where
     /// Constant.
     pub fn size(&self) -> LeafSize<L> {
         self.root.as_ref().map_or_else(Default::default, |r| r.size())
-    }
-
-    fn subtree_get<F>(
-        &self,
-        cmp: F,
-        first_child: Down<L>,
-        offset: LeafSize<L>,
-    ) -> Option<L>
-    where
-        F: Fn(&LeafSize<L>) -> Ordering,
-    {
-        let mut node = first_child;
-        let mut size = offset;
-        loop {
-            node = match node {
-                Down::Leaf(mut node) => loop {
-                    let new_size = size.clone().add(node.size());
-                    let ord = cmp(&new_size);
-                    if ord.is_le() {
-                        if let Some(next) = node.next_sibling() {
-                            node = next;
-                            size = new_size;
-                            continue;
-                        }
-                        if !(ord.is_eq() && size == new_size) {
-                            return None;
-                        }
-                        // Item is the last element of the list, has a size of
-                        // zero, and is at the right index.
-                    }
-                    return Some(node);
-                },
-                Down::Internal(mut node) => loop {
-                    let new_size = size.clone().add(node.size());
-                    let ord = cmp(&new_size);
-                    if ord.is_le() {
-                        if let Some(next) = node.next_sibling() {
-                            node = next;
-                            size = new_size;
-                            continue;
-                        }
-                        if !ord.is_eq() {
-                            return None;
-                        }
-                    }
-                    break node.down().unwrap();
-                },
-            }
-        }
     }
 
     /// Gets an item by index.
@@ -372,7 +343,95 @@ where
     where
         F: Fn(&LeafSize<L>) -> Ordering,
     {
-        self.subtree_get(cmp, self.root.clone()?, Default::default())
+        SkipList::subtree_get(cmp, self.root.clone()?, Default::default())
+    }
+}
+
+impl<L: LeafRef> SkipList<L> {
+    /// Gets the index of `item`.
+    ///
+    /// # Time complexity
+    ///
+    /// Θ(log *n*).
+    pub fn index(item: L) -> LeafSize<L> {
+        fn add_siblings<N: NodeRef>(
+            mut node: N,
+            index: &mut LeafSize<N::Leaf>,
+        ) -> Result<InternalNodeRef<N::Leaf>, N> {
+            loop {
+                node = match node.next().ok_or(node)? {
+                    Next::Parent(parent) => return Ok(parent),
+                    Next::Sibling(node) => {
+                        *index += node.size();
+                        node
+                    }
+                }
+            }
+        }
+
+        let mut index = item.size();
+        let mut node = match add_siblings(item, &mut index) {
+            Ok(parent) => parent,
+            Err(_) => {
+                return Default::default();
+            }
+        };
+        loop {
+            node = match add_siblings(node, &mut index) {
+                Ok(parent) => parent,
+                Err(node) => {
+                    return node.size().sub(index);
+                }
+            };
+        }
+    }
+
+    fn subtree_get<F>(
+        cmp: F,
+        first_child: Down<L>,
+        offset: LeafSize<L>,
+    ) -> Option<L>
+    where
+        F: Fn(&LeafSize<L>) -> Ordering,
+    {
+        let mut node = first_child;
+        let mut size = offset;
+        loop {
+            node = match node {
+                Down::Leaf(mut node) => loop {
+                    let new_size = size.clone().add(node.size());
+                    let ord = cmp(&new_size);
+                    if ord.is_le() {
+                        if let Some(next) = node.next_sibling() {
+                            node = next;
+                            size = new_size;
+                            continue;
+                        }
+                        if !(ord.is_eq() && size == new_size) {
+                            return None;
+                        }
+                        // Item is the last element of the list, has a size of
+                        // zero, and is at the right index.
+                    }
+                    return Some(node);
+                },
+                Down::Internal(mut node) => loop {
+                    let new_size = size.clone().add(node.size());
+                    let ord = cmp(&new_size);
+                    if ord.is_le() {
+                        if let Some(next) = node.next_sibling() {
+                            node = next;
+                            size = new_size;
+                            continue;
+                        }
+                        if !ord.is_eq() {
+                            return None;
+                        }
+                    }
+                    break node.down().unwrap();
+                },
+            }
+        }
     }
 
     /// Gets an item by index, relative to the index of another item.
@@ -380,7 +439,7 @@ where
     /// This method returns the item whose index is `offset` greater than the
     /// index of `start`. As with [`Self::get`], this method will not return
     /// items with a size of 0 unless the desired index (`offset` plus
-    /// <code>self.[index]\(start)</code>) is equal to the [size] of the list,
+    /// <code>[Self::index]\(start)</code>) is equal to the [size] of the list,
     /// in which case the last item of the list will be returned if it has a
     /// size of zero.
     ///
@@ -390,12 +449,12 @@ where
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
-    pub fn get_after<S>(&self, start: L, offset: &S) -> Option<L>
+    pub fn get_after<S>(start: L, offset: &S) -> Option<L>
     where
         S: Ord + ?Sized,
         LeafSize<L>: Borrow<S>,
     {
-        self.get_after_with_cmp(start, |size| size.borrow().cmp(offset))
+        Self::get_after_with_cmp(start, |size| size.borrow().cmp(offset))
     }
 
     /// Gets an item by index, relative to the index of another item, using
@@ -411,7 +470,7 @@ where
     /// This method returns the item whose index is `offset` greater than the
     /// index of `start`. As with [`Self::get`], this method will not return
     /// items with a size of 0 unless the desired index (`offset` plus
-    /// <code>self.[index]\(start)</code>) is equal to the [size] of the list,
+    /// <code>[Self::index]\(start)</code>) is equal to the [size] of the list,
     /// in which case the last item of the list will be returned if it has a
     /// size of zero.
     ///
@@ -426,12 +485,12 @@ where
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
-    pub fn get_after_with<S>(&self, start: L, offset: &S) -> Option<L>
+    pub fn get_after_with<S>(start: L, offset: &S) -> Option<L>
     where
         S: ?Sized,
         LeafSize<L>: PartialOrd<S>,
     {
-        self.get_after_with_cmp(start, |size| {
+        Self::get_after_with_cmp(start, |size| {
             size.partial_cmp(offset).unwrap_or_else(
                 #[cold]
                 || panic!("`partial_cmp` returned `None`"),
@@ -453,7 +512,7 @@ where
     /// [`Ordering::Equal`], this method returns the item whose index is
     /// `offset` greater than the index of `start`. As with [`Self::get`], this
     /// method will not return items with a size of 0 unless the desired index
-    /// (`offset` plus <code>self.[index]\(start)</code>) is equal to the
+    /// (`offset` plus <code>[Self::index]\(start)</code>) is equal to the
     /// [size] of the list, in which case the last item of the list will be
     /// returned if it has a size of zero.
     ///
@@ -468,7 +527,7 @@ where
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
-    pub fn get_after_with_cmp<F>(&self, start: L, cmp: F) -> Option<L>
+    pub fn get_after_with_cmp<F>(start: L, cmp: F) -> Option<L>
     where
         F: Fn(&LeafSize<L>) -> Ordering,
     {
@@ -509,56 +568,24 @@ where
                 }
                 None if ord.is_eq() => {
                     let last = if leaf_is_last {
-                        Some(leaf)
+                        leaf
                     } else {
-                        self.last()
+                        Self::subtree_last(internal.as_down())
                     };
-                    return last.filter(|n| n.size() == Default::default());
+                    return if last.size() == Default::default() {
+                        Some(last)
+                    } else {
+                        None
+                    };
                 }
                 None => return None,
             }
             let new_size = size.clone().add(internal.size());
             ord = cmp(&new_size);
             if ord.is_gt() {
-                return self.subtree_get(cmp, internal.down().unwrap(), size);
+                return Self::subtree_get(cmp, internal.down().unwrap(), size);
             }
             size = new_size;
-        }
-    }
-
-    /// Gets the index of `item`.
-    ///
-    /// # Time complexity
-    ///
-    /// Θ(log *n*).
-    pub fn index(&self, item: L) -> LeafSize<L> {
-        fn add_siblings<N: NodeRef>(
-            mut node: N,
-            index: &mut LeafSize<N::Leaf>,
-        ) -> Option<InternalNodeRef<N::Leaf>> {
-            loop {
-                node = match node.next()? {
-                    Next::Parent(parent) => return Some(parent),
-                    Next::Sibling(node) => {
-                        *index += node.size();
-                        node
-                    }
-                }
-            }
-        }
-
-        let mut index = item.size();
-        let mut node = if let Some(parent) = add_siblings(item, &mut index) {
-            parent
-        } else {
-            return self.size().sub(index);
-        };
-        loop {
-            node = if let Some(parent) = add_siblings(node, &mut index) {
-                parent
-            } else {
-                return self.size().sub(index);
-            };
         }
     }
 }
@@ -921,13 +948,7 @@ where
     ///
     /// Θ(log *n*).
     pub fn first(&self) -> Option<L> {
-        let mut node = self.root.clone()?;
-        loop {
-            node = match node {
-                Down::Leaf(node) => return Some(node),
-                Down::Internal(node) => node.down().unwrap(),
-            }
-        }
+        self.root.clone().map(SkipList::subtree_first)
     }
 
     /// Gets the last item in the list.
@@ -936,13 +957,7 @@ where
     ///
     /// Θ(log *n*).
     pub fn last(&self) -> Option<L> {
-        let mut node = self.root.clone()?;
-        loop {
-            node = match node {
-                Down::Leaf(node) => return Some(get_last_sibling(node)),
-                Down::Internal(node) => get_last_sibling(node).down().unwrap(),
-            }
-        }
+        self.root.clone().map(SkipList::subtree_last)
     }
 
     /// Gets an iterator over the items in the list.
@@ -982,67 +997,6 @@ where
             item,
         );
         Ok(())
-    }
-
-    fn subtree_find<F>(
-        &self,
-        cmp: F,
-        first_child: Down<L>,
-    ) -> Result<L, Option<L>>
-    where
-        F: Fn(&L) -> Ordering,
-    {
-        let mut node = first_child;
-        #[cfg(debug_assertions)]
-        let mut first = true;
-        loop {
-            // These variables are only used in their respective loops, but
-            // defining them outside of the `match` reduces indentation.
-            let mut prev_leaf: Option<L> = None;
-            let mut prev_internal: Option<InternalNodeRef<L>> = None;
-            node = match node {
-                Down::Leaf(mut node) => loop {
-                    println!("{:?}", cmp(&node));
-                    match cmp(&node) {
-                        Ordering::Less => {}
-                        Ordering::Equal => return Ok(node),
-                        Ordering::Greater => {
-                            #[cfg(debug_assertions)]
-                            debug_assert!(first || prev_leaf.is_some());
-                            return Err(prev_leaf);
-                        }
-                    }
-                    if let Some(next) = node.next_sibling() {
-                        prev_leaf = Some(node);
-                        node = next;
-                    } else {
-                        return Err(Some(node));
-                    }
-                },
-                Down::Internal(mut node) => loop {
-                    let key = node.key().unwrap();
-                    match cmp(&key) {
-                        Ordering::Less => {}
-                        Ordering::Equal => return Ok(key),
-                        Ordering::Greater => {
-                            #[cfg(debug_assertions)]
-                            debug_assert!(first || prev_internal.is_some());
-                            break prev_internal.ok_or(None)?.down().unwrap();
-                        }
-                    }
-                    if let Some(next) = node.next_sibling() {
-                        prev_internal = Some(node);
-                        node = next;
-                    } else {
-                        break node.down().unwrap();
-                    }
-                },
-            };
-            #[cfg(debug_assertions)]
-            {
-                first = false;
-            }
-        }
     }
 
     /// Finds an item in a sorted list.
@@ -1117,17 +1071,78 @@ where
     where
         F: Fn(&L) -> Ordering,
     {
-        self.subtree_find(cmp, self.root.clone().ok_or(None)?)
+        SkipList::subtree_find(cmp, self.root.clone().ok_or(None)?)
+    }
+}
+
+impl<L> SkipList<L>
+where
+    L: LeafRef,
+    L::Options: ListOptions<StoreKeys = Bool<true>>,
+{
+    fn subtree_find<F>(cmp: F, first_child: Down<L>) -> Result<L, Option<L>>
+    where
+        F: Fn(&L) -> Ordering,
+    {
+        let mut node = first_child;
+        #[cfg(debug_assertions)]
+        let mut first = true;
+        loop {
+            // These variables are only used in their respective loops, but
+            // defining them outside of the `match` reduces indentation.
+            let mut prev_leaf: Option<L> = None;
+            let mut prev_internal: Option<InternalNodeRef<L>> = None;
+            node = match node {
+                Down::Leaf(mut node) => loop {
+                    println!("{:?}", cmp(&node));
+                    match cmp(&node) {
+                        Ordering::Less => {}
+                        Ordering::Equal => return Ok(node),
+                        Ordering::Greater => {
+                            #[cfg(debug_assertions)]
+                            debug_assert!(first || prev_leaf.is_some());
+                            return Err(prev_leaf);
+                        }
+                    }
+                    if let Some(next) = node.next_sibling() {
+                        prev_leaf = Some(node);
+                        node = next;
+                    } else {
+                        return Err(Some(node));
+                    }
+                },
+                Down::Internal(mut node) => loop {
+                    let key = node.key().unwrap();
+                    match cmp(&key) {
+                        Ordering::Less => {}
+                        Ordering::Equal => return Ok(key),
+                        Ordering::Greater => {
+                            #[cfg(debug_assertions)]
+                            debug_assert!(first || prev_internal.is_some());
+                            break prev_internal.ok_or(None)?.down().unwrap();
+                        }
+                    }
+                    if let Some(next) = node.next_sibling() {
+                        prev_internal = Some(node);
+                        node = next;
+                    } else {
+                        break node.down().unwrap();
+                    }
+                },
+            };
+            #[cfg(debug_assertions)]
+            {
+                first = false;
+            }
+        }
     }
 
     /// Finds an item in a sorted list, at or after a given item.
     ///
     /// If the desired item occurs at or after `start`, or is not present in
     /// the list but would be ordered after `start`, this method returns the
-    /// same result as <code>self.[find]\(key)</code>. Otherwise,
-    /// <code>[Err]\([None])</code> is returned.
-    ///
-    /// [find]: Self::find
+    /// same result as [`Self::find`]. Otherwise, <code>[Err]\([None])</code>
+    /// is returned.
     ///
     /// # Panics
     ///
@@ -1136,12 +1151,12 @@ where
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
-    pub fn find_after<K>(&self, start: L, key: &K) -> Result<L, Option<L>>
+    pub fn find_after<K>(start: L, key: &K) -> Result<L, Option<L>>
     where
         K: Ord + ?Sized,
         L: Borrow<K>,
     {
-        self.find_after_with_cmp(start, |item| item.borrow().cmp(key))
+        Self::find_after_with_cmp(start, |item| item.borrow().cmp(key))
     }
 
     /// Finds an item in a sorted list, at or after a given item, with a key
@@ -1163,12 +1178,12 @@ where
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
-    pub fn find_after_with<K>(&self, start: L, key: &K) -> Result<L, Option<L>>
+    pub fn find_after_with<K>(start: L, key: &K) -> Result<L, Option<L>>
     where
         K: ?Sized,
         L: PartialOrd<K>,
     {
-        self.find_after_with_cmp(start, |item| {
+        Self::find_after_with_cmp(start, |item| {
             item.partial_cmp(key).unwrap_or_else(
                 #[cold]
                 || panic!("`partial_cmp` returned `None`"),
@@ -1195,11 +1210,7 @@ where
     /// # Time complexity
     ///
     /// Worst-case Θ(log *n*).
-    pub fn find_after_with_cmp<F>(
-        &self,
-        start: L,
-        cmp: F,
-    ) -> Result<L, Option<L>>
+    pub fn find_after_with_cmp<F>(start: L, cmp: F) -> Result<L, Option<L>>
     where
         F: Fn(&L) -> Ordering,
     {
@@ -1243,7 +1254,7 @@ where
                 None => break internal.down().unwrap(),
             }
         };
-        self.subtree_find(cmp, down)
+        Self::subtree_find(cmp, down)
     }
 }
 

@@ -116,7 +116,9 @@ fn basic() {
     assert!(list.iter().eq(&items));
 
     for i in 0..items.len() {
-        assert_eq!(i, list.get(&i).unwrap().value);
+        let item = list.get(&i).unwrap();
+        assert_eq!(i, item.value);
+        assert_eq!(SkipList::index(item), i);
         assert_eq!(i, list.find_with(&Value::new(i)).ok().unwrap().value);
         let v = Value::with_transformation(i * 2 + 1, |v| v * 2);
         assert_eq!(i, list.find_with(&v).err().unwrap().unwrap().value);
@@ -206,18 +208,18 @@ fn get_after() {
     list.push_back_from(&items);
     let item = list.get(&100).unwrap();
     assert_eq!(item.value, 100);
-    assert_eq!(list.get_after(item, &0).unwrap().value, 100);
-    assert_eq!(list.get_after(item, &1).unwrap().value, 101);
-    assert_eq!(list.get_after(item, &2).unwrap().value, 102);
-    assert_eq!(list.get_after(item, &10).unwrap().value, 110);
-    assert_eq!(list.get_after(item, &20).unwrap().value, 120);
-    assert_eq!(list.get_after(item, &50).unwrap().value, 150);
-    assert_eq!(list.get_after(item, &100).unwrap().value, 200);
-    assert_eq!(list.get_after(item, &149).unwrap().value, 249);
-    assert_eq!(list.get_after(item, &150), None);
+    assert_eq!(SkipList::get_after(item, &0).unwrap().value, 100);
+    assert_eq!(SkipList::get_after(item, &1).unwrap().value, 101);
+    assert_eq!(SkipList::get_after(item, &2).unwrap().value, 102);
+    assert_eq!(SkipList::get_after(item, &10).unwrap().value, 110);
+    assert_eq!(SkipList::get_after(item, &20).unwrap().value, 120);
+    assert_eq!(SkipList::get_after(item, &50).unwrap().value, 150);
+    assert_eq!(SkipList::get_after(item, &100).unwrap().value, 200);
+    assert_eq!(SkipList::get_after(item, &149).unwrap().value, 249);
+    assert_eq!(SkipList::get_after(item, &150), None);
     let item = list.last().unwrap();
-    assert_eq!(list.get_after(item, &0), Some(item));
-    assert_eq!(list.get_after(item, &1), None);
+    assert_eq!(SkipList::get_after(item, &0), Some(item));
+    assert_eq!(SkipList::get_after(item, &1), None);
 }
 
 #[test]
@@ -227,7 +229,7 @@ fn find_after() {
     list.push_back_from(&items);
     let item = list.find_with(&Value::new(50)).unwrap();
     assert_eq!(item.value, 50);
-    let find = |v| list.find_after_with(item, &Value::new(v));
+    let find = |v| SkipList::find_after_with(item, &Value::new(v));
     assert_eq!(find(0), Err(None));
     assert_eq!(find(49), Err(None));
     assert_eq!(find(50).unwrap().value, 50);
@@ -256,21 +258,47 @@ fn zero_sized() {
     assert_eq!(list.get(&50).unwrap().value, 100);
     let item = list.get(&25).unwrap();
     assert_eq!(item.value, 51);
-    assert_eq!(list.get_after(item, &0).unwrap().value, 51);
-    assert_eq!(list.get_after(item, &15).unwrap().value, 81);
+    assert_eq!(SkipList::get_after(item, &0).unwrap().value, 51);
+    assert_eq!(SkipList::get_after(item, &15).unwrap().value, 81);
     let item = SkipList::next(item).unwrap();
     assert_eq!(item.value, 52);
-    assert_eq!(list.get_after(item, &0).unwrap().value, 53);
-    assert_eq!(list.get_after(item, &15).unwrap().value, 83);
-    assert_eq!(list.get_after(item, &23).unwrap().value, 99);
-    assert_eq!(list.get_after(item, &24).unwrap().value, 100);
+    assert_eq!(SkipList::get_after(item, &0).unwrap().value, 53);
+    assert_eq!(SkipList::get_after(item, &15).unwrap().value, 83);
+    assert_eq!(SkipList::get_after(item, &23).unwrap().value, 99);
+    assert_eq!(SkipList::get_after(item, &24).unwrap().value, 100);
     let item = list.get(&49).unwrap();
-    assert_eq!(list.get_after(item, &0).unwrap().value, 99);
-    assert_eq!(list.get_after(item, &1).unwrap().value, 100);
+    assert_eq!(SkipList::get_after(item, &0).unwrap().value, 99);
+    assert_eq!(SkipList::get_after(item, &1).unwrap().value, 100);
     let item = list.get(&50).unwrap();
     assert_eq!(item.value, 100);
-    assert_eq!(list.get_after(item, &0).unwrap().value, 100);
-    assert_eq!(list.get_after(item, &1), None);
+    assert_eq!(SkipList::get_after(item, &0).unwrap().value, 100);
+    assert_eq!(SkipList::get_after(item, &1), None);
+}
+
+#[test]
+fn one_item() {
+    use core::ptr::addr_eq;
+    let item = Leaf::new(Data::new(123, 1));
+    let mut list = SkipList::new();
+    list.push_front(&item);
+    assert!(addr_eq(list.first().unwrap(), &item));
+    assert!(addr_eq(list.last().unwrap(), &item));
+    assert_eq!(SkipList::index(&item), 0);
+    assert_eq!(SkipList::next(&item), None);
+}
+
+#[test]
+fn large_items() {
+    let items: Vec<_> = (0..30).map(|n| Leaf::new(Data::new(n, 10))).collect();
+    let mut list = SkipList::new();
+    list.push_front_from(&items);
+    assert_eq!(list.get(&5).unwrap().value, 0);
+    assert_eq!(list.get(&9).unwrap().value, 0);
+    assert_eq!(list.get(&10).unwrap().value, 1);
+    assert_eq!(list.get(&99).unwrap().value, 9);
+    assert_eq!(list.get(&100).unwrap().value, 10);
+    assert_eq!(list.get(&299).unwrap().value, 29);
+    assert_eq!(list.get(&300), None);
 }
 
 #[cfg(skippy_debug)]
