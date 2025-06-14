@@ -1,6 +1,6 @@
 [package]
 name = "skippy"
-version = "0.1.0"
+version = "0.1.1-dev"
 edition = "2021"
 rust-version = "1.65"
 description = "Highly flexible worst-case O(log n) intrusive skip list"

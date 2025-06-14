@@ -20,4 +20,6 @@ If the crate feature `allocator_api` is enabled, the skip list can be
 configured with the unstable [`Allocator`] trait. Otherwise,
 [allocator-fallback] will be used.
 
-This crate can be used in `no_std` contexts by disabling the `std` feature.
+This crate can be used in `no_std` contexts by disabling the `std` feature with
+`default-features = false`. In this case, one of `allocator-fallback` or
+`allocator_api` must be enabled.
