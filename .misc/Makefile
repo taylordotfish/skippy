@@ -25,3 +25,5 @@ SOURCES = README.m4 ../Cargo.toml ../src/common-readme.md
 
 package-readme.md: $(SOURCES)
 	m4 -DRUST $< > $@
+
+.DELETE_ON_ERROR:
