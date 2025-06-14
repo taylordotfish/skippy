@@ -1,11 +1,11 @@
 [package]
 name = "skippy"
-version = "0.1.0-dev"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.65"
 description = "Highly flexible worst-case O(log n) intrusive skip list"
 documentation = "https://docs.rs/skippy"
-readme = "misc/package-readme.md"
+readme = ".misc/package-readme.md"
 repository = "https://github.com/taylordotfish/skippy"
 license = "AGPL-3.0-or-later"
 keywords = ["skip-list", "intrusive", "list", "tree"]
