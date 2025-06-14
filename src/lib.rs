@@ -25,6 +25,8 @@
 #![doc = include_str!("common-readme.md")]
 //!
 //! [fanout]: ListOptions::Fanout
+//! [`Allocator`]: alloc::alloc::Allocator
+//! [allocator-fallback]: allocator_fallback
 
 #[cfg(not(any_allocator_api))]
 compile_error!("allocator_api or allocator-fallback must be enabled");

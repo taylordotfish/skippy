@@ -38,3 +38,6 @@ check-cfg = [
     "cfg(has_allocator_api)",
     "cfg(skippy_debug)",
 ]
+
+[package.metadata.docs.rs]
+features = ["allocator_api"]

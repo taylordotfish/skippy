@@ -12,3 +12,12 @@ any two consecutive nodes at layer *L*, there are always between *F* / 2 and
 *F* nodes at layer *L* - 1, where *F* is a configurable [fanout] parameter.
 This is very similar to a B+ tree; in fact, this skip list *is* essentially a
 B+ tree where children are stored in linked lists rather than arrays.
+
+Crate features
+--------------
+
+If the crate feature `allocator_api` is enabled, the skip list can be
+configured with the unstable [`Allocator`] trait. Otherwise,
+[allocator-fallback] will be used.
+
+This crate can be used in `no_std` contexts by disabling the `std` feature.

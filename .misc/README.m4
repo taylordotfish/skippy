@@ -31,6 +31,8 @@ Skippy
 undivert(../src/common-readme.md)dnl
 
 [fanout]: https://doc.rust-lang.org/skippy/VERSION/skippy/options/trait.ListOptions.html#associatedtype.Fanout
+[`Allocator`]: https://doc.rust-lang.org/stable/std/alloc/trait.Allocator.html
+[allocator-fallback]: https://docs.rs/allocator-fallback
 ifdef({RUST},, {dnl
 
 Documentation
